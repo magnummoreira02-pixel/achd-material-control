@@ -1,0 +1,2157 @@
+```html
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Seleção de Material</title>
+
+  <!-- React -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+  <!-- Babel para permitir JSX diretamente no HTML -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Biblioteca para leitura de Excel/CSV -->
+  <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family:
+        'IBM Plex Sans',
+        -apple-system,
+        BlinkMacSystemFont,
+        'Segoe UI',
+        sans-serif;
+      background: #F1F1EC;
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    button {
+      user-select: none;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div id="root"></div>
+
+  <script type="text/babel">
+
+    /* =========================================================
+       REACT
+    ========================================================= */
+
+    const {
+      useState,
+      useMemo,
+      useRef,
+      useCallback
+    } = React;
+
+
+    /* =========================================================
+       ÍCONES
+       Criados diretamente em SVG para evitar o erro React #130
+    ========================================================= */
+
+    const Icon = ({
+      name,
+      size = 18,
+      color = "currentColor",
+      strokeWidth = 2,
+      style = {}
+    }) => {
+
+      const common = {
+        width: size,
+        height: size,
+        viewBox: "0 0 24 24",
+        fill: "none",
+        stroke: color,
+        strokeWidth: strokeWidth,
+        strokeLinecap: "round",
+        strokeLinejoin: "round",
+        style: {
+          display: "inline-block",
+          flexShrink: 0,
+          ...style
+        }
+      };
+
+      const icons = {
+
+        UploadCloud: (
+          <svg {...common}>
+            <path d="M16 16l-4-4-4 4" />
+            <path d="M12 12v9" />
+            <path d="M20.39 17.39A5 5 0 0 0 18 8h-1.26A8 8 0 1 0 4 16.3" />
+          </svg>
+        ),
+
+        FileSpreadsheet: (
+          <svg {...common}>
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <path d="M3 9h18" />
+            <path d="M9 3v18" />
+            <path d="M15 9v12" />
+            <path d="M9 15h6" />
+          </svg>
+        ),
+
+        Settings2: (
+          <svg {...common}>
+            <path d="M20 7h-9" />
+            <path d="M14 17H5" />
+            <circle cx="17" cy="7" r="3" />
+            <circle cx="7" cy="17" r="3" />
+          </svg>
+        ),
+
+        Search: (
+          <svg {...common}>
+            <circle cx="11" cy="11" r="8" />
+            <path d="m21 21-4.3-4.3" />
+          </svg>
+        ),
+
+        X: (
+          <svg {...common}>
+            <path d="M18 6 6 18" />
+            <path d="m6 6 12 12" />
+          </svg>
+        ),
+
+        Check: (
+          <svg {...common}>
+            <path d="m5 12 4 4L19 6" />
+          </svg>
+        ),
+
+        RotateCcw: (
+          <svg {...common}>
+            <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+            <path d="M3 3v5h5" />
+          </svg>
+        ),
+
+        AlertTriangle: (
+          <svg {...common}>
+            <path d="m21 21-1.8-3.2" />
+            <path d="M5 17.8 3 21" />
+            <path d="M3.3 16.5 12 3l8.7 13.5a2 2 0 0 1-1.7 3H5a2 2 0 0 1-1.7-3Z" />
+            <path d="M12 9v4" />
+            <path d="M12 17h.01" />
+          </svg>
+        ),
+
+        Printer: (
+          <svg {...common}>
+            <path d="M6 9V2h12v7" />
+            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+            <path d="M6 14h12v8H6z" />
+          </svg>
+        )
+      };
+
+      return icons[name] || null;
+    };
+
+
+    /* =========================================================
+       CORES
+    ========================================================= */
+
+    const PAPER = "#F1F1EC";
+    const PANEL = "#FFFFFF";
+
+    const INK = "#1E2A38";
+    const INK_SOFT = "#5B6B7C";
+
+    const LINE = "#D8D9D0";
+    const LINE_STRONG = "#B7BAAF";
+
+    const AMBER = "#C97A1C";
+    const AMBER_BG = "#FBEEDD";
+
+    const GREEN = "#2E7D5B";
+    const GREEN_BG = "#E4F2EA";
+
+    const RED = "#B3402E";
+    const RED_BG = "#FBEAE6";
+
+
+    /* =========================================================
+       FONTES
+    ========================================================= */
+
+    const FONT_IMPORT = `
+      @import url(
+        'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700
+        &family=IBM+Plex+Sans:wght@400;500;600
+        &family=IBM+Plex+Mono:wght@400;500;600
+        &display=swap'
+      );
+    `;
+
+
+    /* =========================================================
+       IDENTIFICAÇÃO AUTOMÁTICA DA COLUNA
+    ========================================================= */
+
+    function guessIdColumn(headers) {
+
+      const patterns = [
+        "qr",
+        "codigo",
+        "código",
+        "cod",
+        "id",
+        "sku",
+        "material",
+        "tag"
+      ];
+
+      for (const p of patterns) {
+
+        const found = headers.find((h) =>
+          String(h).toLowerCase().includes(p)
+        );
+
+        if (found) {
+          return found;
+        }
+      }
+
+      return headers[0] || "";
+    }
+
+
+    /* =========================================================
+       BADGE DOS PASSOS
+    ========================================================= */
+
+    function StepBadge({ n, active }) {
+
+      return (
+        <div
+          style={{
+            width: 30,
+            height: 30,
+            borderRadius: 4,
+
+            border:
+              `1.5px solid ${
+                active ? INK : LINE_STRONG
+              }`,
+
+            color:
+              active ? PAPER : INK_SOFT,
+
+            background:
+              active ? INK : "transparent",
+
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+
+            fontFamily:
+              "'IBM Plex Mono', monospace",
+
+            fontWeight: 600,
+            fontSize: 13,
+
+            flexShrink: 0
+          }}
+        >
+          {n}
+        </div>
+      );
+    }
+
+
+    /* =========================================================
+       PAINEL
+    ========================================================= */
+
+    function Panel({
+      step,
+      title,
+      active,
+      children,
+      trailing
+    }) {
+
+      return (
+        <section
+          style={{
+            background: PANEL,
+
+            border:
+              `1px solid ${LINE}`,
+
+            borderRadius: 6,
+
+            marginBottom: 20,
+
+            opacity:
+              active ? 1 : 0.55,
+
+            transition:
+              "opacity 0.2s ease"
+          }}
+        >
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+
+              padding:
+                "14px 18px",
+
+              borderBottom:
+                `1px solid ${LINE}`
+            }}
+          >
+
+            <StepBadge
+              n={step}
+              active={active}
+            />
+
+            <span
+              style={{
+                fontFamily:
+                  "'Space Grotesk', sans-serif",
+
+                fontWeight: 600,
+                fontSize: 14,
+
+                letterSpacing:
+                  "0.03em",
+
+                textTransform:
+                  "uppercase",
+
+                color: INK,
+
+                flex: 1
+              }}
+            >
+              {title}
+            </span>
+
+            {trailing}
+
+          </div>
+
+          <div
+            style={{
+              padding: 18
+            }}
+          >
+            {children}
+          </div>
+
+        </section>
+      );
+    }
+
+
+    /* =========================================================
+       APLICAÇÃO
+    ========================================================= */
+
+    function App() {
+
+      const [fileName, setFileName] =
+        useState("");
+
+      const [headers, setHeaders] =
+        useState([]);
+
+      const [rows, setRows] =
+        useState([]);
+
+      const [idColumn, setIdColumn] =
+        useState("");
+
+      const [displayColumns, setDisplayColumns] =
+        useState([]);
+
+      const [query, setQuery] =
+        useState("");
+
+      const [matched, setMatched] =
+        useState(null);
+
+      const [searchState, setSearchState] =
+        useState("idle");
+
+      const [dragOver, setDragOver] =
+        useState(false);
+
+      const [parseError, setParseError] =
+        useState("");
+
+      const inputRef =
+        useRef(null);
+
+
+      /* =====================================================
+         ESTADOS DERIVADOS
+      ===================================================== */
+
+      const hasData =
+        rows.length > 0 &&
+        headers.length > 0;
+
+      const readyToSearch =
+        hasData &&
+        idColumn;
+
+
+      /* =====================================================
+         PROCESSAR PLANILHA
+      ===================================================== */
+
+      const processFile =
+        useCallback((file) => {
+
+          if (!file) {
+            return;
+          }
+
+          setParseError("");
+
+          const reader =
+            new FileReader();
+
+          reader.onload =
+            (e) => {
+
+              try {
+
+                const data =
+                  new Uint8Array(
+                    e.target.result
+                  );
+
+                const workbook =
+                  XLSX.read(
+                    data,
+                    {
+                      type: "array"
+                    }
+                  );
+
+                if (
+                  !workbook.SheetNames ||
+                  workbook.SheetNames.length === 0
+                ) {
+
+                  setParseError(
+                    "Não foi encontrada nenhuma planilha no arquivo."
+                  );
+
+                  return;
+                }
+
+                const sheetName =
+                  workbook.SheetNames[0];
+
+                const sheet =
+                  workbook.Sheets[sheetName];
+
+                const json =
+                  XLSX.utils.sheet_to_json(
+                    sheet,
+                    {
+                      defval: ""
+                    }
+                  );
+
+                if (!json.length) {
+
+                  setParseError(
+                    "A planilha está vazia ou não foi possível ler as colunas."
+                  );
+
+                  return;
+                }
+
+                const hdrs =
+                  Object.keys(json[0]);
+
+                if (!hdrs.length) {
+
+                  setParseError(
+                    "Não foram encontradas colunas na planilha."
+                  );
+
+                  return;
+                }
+
+                setHeaders(hdrs);
+                setRows(json);
+                setFileName(file.name);
+
+                const guessed =
+                  guessIdColumn(hdrs);
+
+                setIdColumn(guessed);
+
+                setDisplayColumns(
+                  hdrs.filter(
+                    (h) => h !== guessed
+                  )
+                );
+
+                setQuery("");
+                setMatched(null);
+                setSearchState("idle");
+
+              } catch (err) {
+
+                console.error(err);
+
+                setParseError(
+                  "Não foi possível ler este arquivo. Confirme se é um .xlsx, .xls ou .csv válido."
+                );
+              }
+            };
+
+          reader.readAsArrayBuffer(file);
+
+        }, []);
+
+
+      /* =====================================================
+         INPUT DE ARQUIVO
+      ===================================================== */
+
+      const handleFileInput =
+        (e) => {
+
+          const file =
+            e.target.files &&
+            e.target.files[0];
+
+          if (file) {
+            processFile(file);
+          }
+        };
+
+
+      /* =====================================================
+         ARRASTAR ARQUIVO
+      ===================================================== */
+
+      const handleDrop =
+        (e) => {
+
+          e.preventDefault();
+
+          setDragOver(false);
+
+          const file =
+            e.dataTransfer.files &&
+            e.dataTransfer.files[0];
+
+          if (file) {
+            processFile(file);
+          }
+        };
+
+
+      /* =====================================================
+         RESET
+      ===================================================== */
+
+      const resetAll =
+        () => {
+
+          setFileName("");
+          setHeaders([]);
+          setRows([]);
+          setIdColumn("");
+          setDisplayColumns([]);
+          setQuery("");
+          setMatched(null);
+          setSearchState("idle");
+          setParseError("");
+
+          if (inputRef.current) {
+            inputRef.current.value = "";
+          }
+        };
+
+
+      /* =====================================================
+         SUGESTÕES
+      ===================================================== */
+
+      const suggestions =
+        useMemo(() => {
+
+          if (
+            !readyToSearch ||
+            !query.trim()
+          ) {
+            return [];
+          }
+
+          const q =
+            query
+              .trim()
+              .toLowerCase();
+
+          return rows
+            .filter((r) =>
+              String(
+                r[idColumn] ?? ""
+              )
+              .toLowerCase()
+              .includes(q)
+            )
+            .slice(0, 8);
+
+        }, [
+          rows,
+          idColumn,
+          query,
+          readyToSearch
+        ]);
+
+
+      /* =====================================================
+         PESQUISA
+      ===================================================== */
+
+      const runSearch =
+        (value) => {
+
+          const q =
+            String(
+              value ?? query
+            )
+            .trim()
+            .toLowerCase();
+
+          if (!q) {
+
+            setMatched(null);
+            setSearchState("idle");
+
+            return;
+          }
+
+          const exact =
+            rows.find(
+              (r) =>
+                String(
+                  r[idColumn] ?? ""
+                )
+                .trim()
+                .toLowerCase() === q
+            );
+
+          if (exact) {
+
+            setMatched(exact);
+            setSearchState("found");
+
+          } else {
+
+            setMatched(null);
+            setSearchState("notfound");
+          }
+        };
+
+
+      /* =====================================================
+         ALTERAR COLUNAS
+      ===================================================== */
+
+      const toggleColumn =
+        (h) => {
+
+          setDisplayColumns(
+            (prev) =>
+
+              prev.includes(h)
+
+                ? prev.filter(
+                    (c) => c !== h
+                  )
+
+                : [
+                    ...prev,
+                    h
+                  ]
+          );
+        };
+
+
+      /* =====================================================
+         RENDER
+      ===================================================== */
+
+      return (
+
+        <div
+          style={{
+            fontFamily:
+              "'IBM Plex Sans', sans-serif",
+
+            background: PAPER,
+
+            minHeight: "100vh",
+
+            padding:
+              "32px 20px",
+
+            color: INK
+          }}
+        >
+
+          <style>
+            {FONT_IMPORT}
+          </style>
+
+
+          <div
+            style={{
+              maxWidth: 720,
+              margin: "0 auto"
+            }}
+          >
+
+
+            {/* =================================================
+                CABEÇALHO
+            ================================================= */}
+
+            <div
+              style={{
+                marginBottom: 28
+              }}
+            >
+
+              <div
+                style={{
+                  fontFamily:
+                    "'IBM Plex Mono', monospace",
+
+                  fontSize: 12,
+
+                  letterSpacing:
+                    "0.12em",
+
+                  color: AMBER,
+
+                  fontWeight: 600,
+
+                  marginBottom: 6
+                }}
+              >
+                CONSOLE DE BUSCA
+              </div>
+
+
+              <h1
+                style={{
+                  fontFamily:
+                    "'Space Grotesk', sans-serif",
+
+                  fontSize: 32,
+
+                  fontWeight: 700,
+
+                  margin: 0,
+
+                  letterSpacing:
+                    "-0.01em"
+                }}
+              >
+                Seleção de material
+              </h1>
+
+
+              <p
+                style={{
+                  color: INK_SOFT,
+
+                  fontSize: 14,
+
+                  marginTop: 8,
+
+                  lineHeight: 1.6
+                }}
+              >
+                Importe uma planilha,
+                defina qual coluna guarda
+                o número ou código QR,
+                e busque um item digitando
+                ou lendo o código.
+              </p>
+
+            </div>
+
+
+            {/* =================================================
+                STEP 1
+            ================================================= */}
+
+            <Panel
+              step={1}
+              title="Importar planilha"
+              active={true}
+
+              trailing={
+                hasData && (
+
+                  <button
+                    onClick={resetAll}
+
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+
+                      background:
+                        "transparent",
+
+                      border:
+                        `1px solid ${LINE_STRONG}`,
+
+                      borderRadius: 4,
+
+                      padding:
+                        "6px 10px",
+
+                      fontSize: 12,
+
+                      color: INK_SOFT,
+
+                      cursor:
+                        "pointer",
+
+                      fontFamily:
+                        "'IBM Plex Sans', sans-serif"
+                    }}
+                  >
+
+                    <Icon
+                      name="RotateCcw"
+                      size={13}
+                    />
+
+                    Trocar arquivo
+
+                  </button>
+                )
+              }
+            >
+
+              {!hasData ? (
+
+                <div
+                  onDragOver={(e) => {
+
+                    e.preventDefault();
+
+                    setDragOver(true);
+                  }}
+
+                  onDragLeave={() =>
+                    setDragOver(false)
+                  }
+
+                  onDrop={handleDrop}
+
+                  onClick={() => {
+
+                    if (
+                      inputRef.current
+                    ) {
+
+                      inputRef.current.click();
+
+                    }
+
+                  }}
+
+                  style={{
+                    border:
+                      `2px dashed ${
+                        dragOver
+                          ? AMBER
+                          : LINE_STRONG
+                      }`,
+
+                    borderRadius: 6,
+
+                    padding:
+                      "36px 20px",
+
+                    textAlign: "center",
+
+                    cursor: "pointer",
+
+                    background:
+                      dragOver
+                        ? AMBER_BG
+                        : PAPER,
+
+                    transition:
+                      "all 0.15s ease"
+                  }}
+                >
+
+                  <Icon
+                    name="UploadCloud"
+                    size={28}
+                    color={
+                      dragOver
+                        ? AMBER
+                        : INK_SOFT
+                    }
+                    style={{
+                      marginBottom: 10
+                    }}
+                  />
+
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      fontSize: 14,
+                      marginBottom: 4
+                    }}
+                  >
+                    Arraste a planilha aqui
+                    ou clique para escolher
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 12.5,
+                      color: INK_SOFT
+                    }}
+                  >
+                    Formatos aceitos:
+                    .xlsx, .xls, .csv
+                  </div>
+
+                  <input
+                    ref={inputRef}
+
+                    type="file"
+
+                    accept=".xlsx,.xls,.csv"
+
+                    onChange={
+                      handleFileInput
+                    }
+
+                    style={{
+                      display: "none"
+                    }}
+                  />
+
+                </div>
+
+              ) : (
+
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10
+                  }}
+                >
+
+                  <Icon
+                    name="FileSpreadsheet"
+                    size={20}
+                    color={GREEN}
+                  />
+
+                  <div
+                    style={{
+                      flex: 1
+                    }}
+                  >
+
+                    <div
+                      style={{
+                        fontWeight: 600,
+                        fontSize: 13.5
+                      }}
+                    >
+                      {fileName}
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: INK_SOFT
+                      }}
+                    >
+                      {rows.length}
+
+                      {" "}
+
+                      {rows.length === 1
+                        ? "linha"
+                        : "linhas"}
+
+                      {" · "}
+
+                      {headers.length}
+
+                      {" "}
+
+                      {headers.length === 1
+                        ? "coluna"
+                        : "colunas"}
+                    </div>
+
+                  </div>
+
+                </div>
+              )}
+
+
+              {parseError && (
+
+                <div
+                  style={{
+                    marginTop: 12,
+
+                    display: "flex",
+
+                    gap: 8,
+
+                    alignItems:
+                      "flex-start",
+
+                    background: RED_BG,
+
+                    color: RED,
+
+                    border:
+                      `1px solid ${RED}`,
+
+                    borderRadius: 4,
+
+                    padding:
+                      "10px 12px",
+
+                    fontSize: 12.5
+                  }}
+                >
+
+                  <Icon
+                    name="AlertTriangle"
+                    size={15}
+                    color={RED}
+                  />
+
+                  <span>
+                    {parseError}
+                  </span>
+
+                </div>
+              )}
+
+            </Panel>
+
+
+            {/* =================================================
+                STEP 2
+            ================================================= */}
+
+            <Panel
+              step={2}
+              title="Configurar colunas"
+              active={hasData}
+            >
+
+              {!hasData ? (
+
+                <div
+                  style={{
+                    fontSize: 13,
+                    color: INK_SOFT
+                  }}
+                >
+                  Importe uma planilha
+                  para configurar as colunas.
+                </div>
+
+              ) : (
+
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 18
+                  }}
+                >
+
+                  <div>
+
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+
+                        fontSize: 12.5,
+
+                        fontWeight: 600,
+
+                        color: INK_SOFT,
+
+                        textTransform:
+                          "uppercase",
+
+                        letterSpacing:
+                          "0.04em",
+
+                        marginBottom: 8
+                      }}
+                    >
+
+                      <Icon
+                        name="Settings2"
+                        size={13}
+                      />
+
+                      Coluna com o número /
+                      código QR
+
+                    </label>
+
+
+                    <select
+                      value={idColumn}
+
+                      onChange={(e) => {
+
+                        const value =
+                          e.target.value;
+
+                        setIdColumn(value);
+
+                        setDisplayColumns(
+                          headers.filter(
+                            (h) =>
+                              h !== value
+                          )
+                        );
+
+                        setQuery("");
+
+                        setMatched(null);
+
+                        setSearchState(
+                          "idle"
+                        );
+                      }}
+
+                      style={{
+                        width: "100%",
+
+                        padding:
+                          "9px 10px",
+
+                        borderRadius: 4,
+
+                        border:
+                          `1px solid ${LINE_STRONG}`,
+
+                        background: PAPER,
+
+                        fontFamily:
+                          "'IBM Plex Mono', monospace",
+
+                        fontSize: 13,
+
+                        color: INK
+                      }}
+                    >
+
+                      {headers.map(
+                        (h) => (
+
+                          <option
+                            key={h}
+                            value={h}
+                          >
+                            {h}
+                          </option>
+
+                        )
+                      )}
+
+                    </select>
+
+                  </div>
+
+
+                  <div>
+
+                    <div
+                      style={{
+                        fontSize: 12.5,
+
+                        fontWeight: 600,
+
+                        color: INK_SOFT,
+
+                        textTransform:
+                          "uppercase",
+
+                        letterSpacing:
+                          "0.04em",
+
+                        marginBottom: 8
+                      }}
+                    >
+                      Colunas a exibir
+                      no resultado
+                    </div>
+
+
+                    <div
+                      style={{
+                        display: "flex",
+
+                        flexWrap:
+                          "wrap",
+
+                        gap: 8
+                      }}
+                    >
+
+                      {headers
+                        .filter(
+                          (h) =>
+                            h !== idColumn
+                        )
+
+                        .map((h) => {
+
+                          const checked =
+                            displayColumns.includes(
+                              h
+                            );
+
+                          return (
+
+                            <button
+                              key={h}
+
+                              onClick={() =>
+                                toggleColumn(h)
+                              }
+
+                              style={{
+                                display:
+                                  "flex",
+
+                                alignItems:
+                                  "center",
+
+                                gap: 6,
+
+                                padding:
+                                  "6px 10px",
+
+                                borderRadius: 4,
+
+                                border:
+                                  `1px solid ${
+                                    checked
+                                      ? INK
+                                      : LINE_STRONG
+                                  }`,
+
+                                background:
+                                  checked
+                                    ? INK
+                                    : "transparent",
+
+                                color:
+                                  checked
+                                    ? PAPER
+                                    : INK_SOFT,
+
+                                fontSize: 12.5,
+
+                                cursor:
+                                  "pointer",
+
+                                fontFamily:
+                                  "'IBM Plex Sans', sans-serif"
+                              }}
+                            >
+
+                              {checked && (
+
+                                <Icon
+                                  name="Check"
+                                  size={12}
+                                />
+
+                              )}
+
+                              {h}
+
+                            </button>
+
+                          );
+                        })}
+
+                    </div>
+
+                  </div>
+
+                </div>
+              )}
+
+            </Panel>
+
+
+            {/* =================================================
+                STEP 3
+            ================================================= */}
+
+            <Panel
+              step={3}
+              title="Buscar material"
+              active={readyToSearch}
+            >
+
+              {!readyToSearch ? (
+
+                <div
+                  style={{
+                    fontSize: 13,
+                    color: INK_SOFT
+                  }}
+                >
+                  Configure a coluna de busca
+                  para habilitar a leitura.
+                </div>
+
+              ) : (
+
+                <div>
+
+                  <div
+                    style={{
+                      position:
+                        "relative",
+
+                      padding:
+                        "14px 0"
+                    }}
+                  >
+
+                    {/* cantos do leitor */}
+
+                    <div
+                      style={{
+                        position:
+                          "absolute",
+
+                        top: 4,
+                        left: 4,
+
+                        width: 16,
+                        height: 16,
+
+                        borderTop:
+                          `2px solid ${AMBER}`,
+
+                        borderLeft:
+                          `2px solid ${AMBER}`
+                      }}
+                    />
+
+                    <div
+                      style={{
+                        position:
+                          "absolute",
+
+                        top: 4,
+                        right: 4,
+
+                        width: 16,
+                        height: 16,
+
+                        borderTop:
+                          `2px solid ${AMBER}`,
+
+                        borderRight:
+                          `2px solid ${AMBER}`
+                      }}
+                    />
+
+                    <div
+                      style={{
+                        position:
+                          "absolute",
+
+                        bottom: 4,
+                        left: 4,
+
+                        width: 16,
+                        height: 16,
+
+                        borderBottom:
+                          `2px solid ${AMBER}`,
+
+                        borderLeft:
+                          `2px solid ${AMBER}`
+                      }}
+                    />
+
+                    <div
+                      style={{
+                        position:
+                          "absolute",
+
+                        bottom: 4,
+                        right: 4,
+
+                        width: 16,
+                        height: 16,
+
+                        borderBottom:
+                          `2px solid ${AMBER}`,
+
+                        borderRight:
+                          `2px solid ${AMBER}`
+                      }}
+                    />
+
+
+                    <div
+                      style={{
+                        display: "flex",
+
+                        alignItems:
+                          "center",
+
+                        gap: 8,
+
+                        padding:
+                          "0 22px"
+                      }}
+                    >
+
+                      <Icon
+                        name="Search"
+                        size={18}
+                        color={INK_SOFT}
+                      />
+
+
+                      <input
+                        value={query}
+
+                        onChange={(e) => {
+
+                          setQuery(
+                            e.target.value
+                          );
+
+                          if (
+                            searchState !==
+                            "idle"
+                          ) {
+                            setSearchState(
+                              "idle"
+                            );
+                          }
+
+                          setMatched(null);
+                        }}
+
+                        onKeyDown={(e) => {
+
+                          if (
+                            e.key ===
+                            "Enter"
+                          ) {
+
+                            runSearch(
+                              e.target.value
+                            );
+
+                          }
+
+                        }}
+
+                        placeholder={
+                          `Digite ou leia o código (${idColumn})`
+                        }
+
+                        style={{
+                          flex: 1,
+
+                          border: "none",
+
+                          outline: "none",
+
+                          background:
+                            "transparent",
+
+                          fontFamily:
+                            "'IBM Plex Mono', monospace",
+
+                          fontSize: 16,
+
+                          padding:
+                            "10px 0",
+
+                          color: INK
+                        }}
+
+                        autoFocus
+                      />
+
+
+                      {query && (
+
+                        <button
+                          onClick={() => {
+
+                            setQuery("");
+
+                            setMatched(null);
+
+                            setSearchState(
+                              "idle"
+                            );
+                          }}
+
+                          style={{
+                            background:
+                              "transparent",
+
+                            border: "none",
+
+                            cursor:
+                              "pointer",
+
+                            color:
+                              INK_SOFT,
+
+                            display:
+                              "flex"
+                          }}
+
+                          aria-label=
+                            "Limpar busca"
+                        >
+
+                          <Icon
+                            name="X"
+                            size={16}
+                          />
+
+                        </button>
+                      )}
+
+                    </div>
+
+                  </div>
+
+
+                  {/* SUGESTÕES */}
+
+                  {query &&
+                    suggestions.length > 0 &&
+                    searchState === "idle" && (
+
+                      <div
+                        style={{
+                          border:
+                            `1px solid ${LINE}`,
+
+                          borderRadius: 4,
+
+                          marginTop: 6,
+
+                          overflow:
+                            "hidden"
+                        }}
+                      >
+
+                        {suggestions.map(
+                          (r, i) => (
+
+                            <div
+                              key={i}
+
+                              onClick={() => {
+
+                                const value =
+                                  String(
+                                    r[idColumn]
+                                  );
+
+                                setQuery(value);
+
+                                runSearch(
+                                  value
+                                );
+                              }}
+
+                              style={{
+                                padding:
+                                  "9px 12px",
+
+                                fontSize: 13,
+
+                                fontFamily:
+                                  "'IBM Plex Mono', monospace",
+
+                                cursor:
+                                  "pointer",
+
+                                borderBottom:
+                                  i <
+                                  suggestions.length - 1
+                                    ? `1px solid ${LINE}`
+                                    : "none",
+
+                                display:
+                                  "flex",
+
+                                justifyContent:
+                                  "space-between",
+
+                                gap: 15
+                              }}
+
+                              onMouseEnter={
+                                (e) =>
+                                  e.currentTarget.style.background =
+                                    PAPER
+                              }
+
+                              onMouseLeave={
+                                (e) =>
+                                  e.currentTarget.style.background =
+                                    "transparent"
+                              }
+                            >
+
+                              <span
+                                style={{
+                                  fontWeight: 600
+                                }}
+                              >
+                                {
+                                  String(
+                                    r[idColumn]
+                                  )
+                                }
+                              </span>
+
+
+                              {displayColumns[0] && (
+
+                                <span
+                                  style={{
+                                    color:
+                                      INK_SOFT,
+
+                                    fontFamily:
+                                      "'IBM Plex Sans', sans-serif",
+
+                                    overflow:
+                                      "hidden",
+
+                                    textOverflow:
+                                      "ellipsis",
+
+                                    whiteSpace:
+                                      "nowrap"
+                                  }}
+                                >
+                                  {
+                                    String(
+                                      r[
+                                        displayColumns[0]
+                                      ] ?? ""
+                                    )
+                                  }
+                                </span>
+
+                              )}
+
+                            </div>
+
+                          )
+                        )}
+
+                      </div>
+                  )}
+
+
+                  {/* NÃO ENCONTRADO */}
+
+                  {searchState ===
+                    "notfound" && (
+
+                    <div
+                      style={{
+                        marginTop: 14,
+
+                        display:
+                          "flex",
+
+                        alignItems:
+                          "center",
+
+                        gap: 8,
+
+                        background:
+                          RED_BG,
+
+                        color: RED,
+
+                        border:
+                          `1px solid ${RED}`,
+
+                        borderRadius: 4,
+
+                        padding:
+                          "10px 12px",
+
+                        fontSize: 13
+                      }}
+                    >
+
+                      <Icon
+                        name="AlertTriangle"
+                        size={15}
+                        color={RED}
+                      />
+
+                      <span>
+                        Nenhum item encontrado
+                        para "{query}" em
+                        {" "}
+                        {idColumn}.
+                      </span>
+
+                    </div>
+                  )}
+
+
+                  {/* ENCONTRADO */}
+
+                  {searchState ===
+                    "found" &&
+                    matched && (
+
+                    <div
+                      style={{
+                        marginTop: 16,
+
+                        background:
+                          GREEN_BG,
+
+                        border:
+                          `1px dashed ${GREEN}`,
+
+                        borderRadius: 6,
+
+                        padding:
+                          "16px 18px"
+                      }}
+                    >
+
+                      <div
+                        style={{
+                          display:
+                            "flex",
+
+                          alignItems:
+                            "center",
+
+                          gap: 8,
+
+                          color: GREEN,
+
+                          fontWeight: 600,
+
+                          fontSize: 12.5,
+
+                          textTransform:
+                            "uppercase",
+
+                          letterSpacing:
+                            "0.04em",
+
+                          marginBottom: 10
+                        }}
+                      >
+
+                        <Icon
+                          name="Check"
+                          size={15}
+                          color={GREEN}
+                        />
+
+                        Item localizado
+
+                      </div>
+
+
+                      <div
+                        style={{
+                          fontFamily:
+                            "'IBM Plex Mono', monospace",
+
+                          fontSize: 20,
+
+                          fontWeight: 600,
+
+                          color: INK,
+
+                          marginBottom: 10
+                        }}
+                      >
+                        {
+                          String(
+                            matched[idColumn]
+                          )
+                        }
+                      </div>
+
+
+                      <div
+                        style={{
+                          display:
+                            "flex",
+
+                          flexDirection:
+                            "column",
+
+                          gap: 6
+                        }}
+                      >
+
+                        {displayColumns.map(
+                          (h) => (
+
+                            <div
+                              key={h}
+
+                              style={{
+                                display:
+                                  "flex",
+
+                                justifyContent:
+                                  "space-between",
+
+                                gap: 20,
+
+                                fontSize: 13.5,
+
+                                borderTop:
+                                  `1px solid ${LINE}`,
+
+                                paddingTop: 6
+                              }}
+                            >
+
+                              <span
+                                style={{
+                                  color:
+                                    INK_SOFT
+                                }}
+                              >
+                                {h}
+                              </span>
+
+                              <span
+                                style={{
+                                  fontWeight: 500,
+
+                                  textAlign:
+                                    "right"
+                                }}
+                              >
+                                {
+                                  String(
+                                    matched[h] ??
+                                    "—"
+                                  )
+                                }
+                              </span>
+
+                            </div>
+
+                          )
+                        )}
+
+                      </div>
+
+                    </div>
+                  )}
+
+                </div>
+              )}
+
+            </Panel>
+
+
+            {/* =================================================
+                TABELA
+            ================================================= */}
+
+            {hasData && (
+
+              <Panel
+                step={4}
+                title={
+                  `Todos os itens (${rows.length})`
+                }
+                active={true}
+              >
+
+                <div
+                  style={{
+                    overflowX:
+                      "auto"
+                  }}
+                >
+
+                  <table
+                    style={{
+                      width: "100%",
+
+                      borderCollapse:
+                        "collapse",
+
+                      fontSize: 12.5
+                    }}
+                  >
+
+                    <thead>
+
+                      <tr>
+
+                        <th
+                          style={{
+                            textAlign:
+                              "left",
+
+                            padding:
+                              "8px 10px",
+
+                            borderBottom:
+                              `2px solid ${INK}`,
+
+                            color: INK,
+
+                            fontFamily:
+                              "'IBM Plex Mono', monospace",
+
+                            whiteSpace:
+                              "nowrap"
+                          }}
+                        >
+                          {idColumn}
+                        </th>
+
+
+                        {displayColumns.map(
+                          (h) => (
+
+                            <th
+                              key={h}
+
+                              style={{
+                                textAlign:
+                                  "left",
+
+                                padding:
+                                  "8px 10px",
+
+                                borderBottom:
+                                  `2px solid ${INK}`,
+
+                                color:
+                                  INK_SOFT,
+
+                                fontWeight:
+                                  500,
+
+                                whiteSpace:
+                                  "nowrap"
+                              }}
+                            >
+                              {h}
+                            </th>
+
+                          )
+                        )}
+
+                      </tr>
+
+                    </thead>
+
+
+                    <tbody>
+
+                      {rows.map(
+                        (r, i) => {
+
+                          const isMatch =
+                            matched &&
+                            String(
+                              r[idColumn]
+                            ) ===
+                            String(
+                              matched[idColumn]
+                            );
+
+                          return (
+
+                            <tr
+                              key={i}
+
+                              style={{
+                                background:
+                                  isMatch
+                                    ? AMBER_BG
+                                    : i % 2 === 0
+                                      ? PANEL
+                                      : PAPER
+                              }}
+                            >
+
+                              <td
+                                style={{
+                                  padding:
+                                    "7px 10px",
+
+                                  borderBottom:
+                                    `1px solid ${LINE}`,
+
+                                  fontFamily:
+                                    "'IBM Plex Mono', monospace",
+
+                                  fontWeight:
+                                    isMatch
+                                      ? 600
+                                      : 400,
+
+                                  whiteSpace:
+                                    "nowrap"
+                                }}
+                              >
+                                {
+                                  String(
+                                    r[idColumn]
+                                  )
+                                }
+                              </td>
+
+
+                              {displayColumns.map(
+                                (h) => (
+
+                                  <td
+                                    key={h}
+
+                                    style={{
+                                      padding:
+                                        "7px 10px",
+
+                                      borderBottom:
+                                        `1px solid ${LINE}`,
+
+                                      color: INK,
+
+                                      whiteSpace:
+                                        "nowrap"
+                                    }}
+                                  >
+                                    {
+                                      String(
+                                        r[h] ?? ""
+                                      )
+                                    }
+                                  </td>
+
+                                )
+                              )}
+
+                            </tr>
+
+                          );
+                        }
+                      )}
+
+                    </tbody>
+
+                  </table>
+
+                </div>
+
+              </Panel>
+            )}
+
+          </div>
+
+        </div>
+      );
+    }
+
+
+    /* =========================================================
+       INICIAR REACT
+    ========================================================= */
+
+    const root =
+      ReactDOM.createRoot(
+        document.getElementById("root")
+      );
+
+    root.render(
+      <App />
+    );
+
+  </script>
+
+</body>
+</html>
+```

@@ -1,0 +1,15 @@
+[33m75bc8d6[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m correção erro de visualização no explore.
+[33m6906e52[m correção de bug.
+[33m85c85f6[m atualização de dashboard.
+[33mea27db2[m REESTRUTURAR E ORGANIZAR CODIGO.
+[33m0ce2a48[m atualizando css e desgnner.
+[33meaaa641[m atualizando realce em modo dark
+[33m53ec010[m ao excluida as caixas a contagem das novas caixa deve voltar para numeração inicial 01
+[33m13428e5[m função de excluir caixas cheias
+[33mf3faab1[m correção de bugs
+[33m7443f98[m retirando formato em impressão
+[33m53155d9[m CORREÇÃO E MELHORIA PERSONALIZAÇÃO DE LAYOUT DE ETIQUETAS
+[33m4dfa911[m Excluir caixa, Gerar e imprimir etiqueta com QR Code da caixa
+[33m9214f6f[m Implementação de Histórico Local e Controle de Estoque por Caixas
+[33m17f70e6[m alterando aspecto de responsidade do app, para tablets,desktop e celular.
+[33m8bd3e08[m MODIFICADO VISUAL MAIS HISTORICO SALVANDO AUTOMATICO E ENTER AUTOMATICO AO LER ID.
