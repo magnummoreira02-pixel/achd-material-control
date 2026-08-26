@@ -40,31 +40,31 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
     if (!rows || rows.length === 0) return {};
     const map = {};
     // local
-    const localCol = findColumn(rows.length ? [rows[0]] : [], ["local", "localidade"]);
+    const localCol = findColumn(headers, ["local", "localidade"]);
     if (localCol) {
-      const vals = [...new Set(rows.map(r => r[localCol]).filter(v => v !== "" && v !== null))].sort();
+      const vals = [...new Set(rows.map(r => r[localCol]).filter(v => v !== "" && v !== null && v !== undefined))].sort();
       map.local = vals;
     }
     // plantador
-    const plantadorCol = findColumn(rows.length ? [rows[0]] : [], ["plantador", "planter"]);
+    const plantadorCol = findColumn(headers, ["plantador", "planter"]);
     if (plantadorCol) {
-      const vals = [...new Set(rows.map(r => r[plantadorCol]).filter(v => v !== "" && v !== null))].sort();
+      const vals = [...new Set(rows.map(r => r[plantadorCol]).filter(v => v !== "" && v !== null && v !== undefined))].sort();
       map.plantador = vals;
     }
     // quadra
-    const quadraCol = findColumn(rows.length ? [rows[0]] : [], ["quadra", "bloco"]);
+    const quadraCol = findColumn(headers, ["quadra", "bloco"]);
     if (quadraCol) {
-      const vals = [...new Set(rows.map(r => r[quadraCol]).filter(v => v !== "" && v !== null))].sort();
+      const vals = [...new Set(rows.map(r => r[quadraCol]).filter(v => v !== "" && v !== null && v !== undefined))].sort();
       map.quadra = vals;
     }
     // row
-    const rowCol = findColumn(rows.length ? [rows[0]] : [], ["row", "linha"]);
+    const rowCol = findColumn(headers, ["row", "linha"]);
     if (rowCol) {
       const nums = [...new Set(rows.map(r => Number(r[rowCol])).filter(n => !isNaN(n)))].sort((a,b)=>a-b);
       map.row = [...new Set(["TODOS", ...nums.map(n=>String(n))])];
     }
     return map;
-  }, [rows]);
+  }, [rows, headers]);
 
   // ---------- Auto-detect column map ----------
   useEffect(() => {
@@ -386,10 +386,10 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
 
   // ---------- Foco automático no input após render ----------
   useEffect(() => {
-    if (inputRef.current) {
+    if (inputRef.current && !inputRef.current.disabled) {
       inputRef.current.focus();
     }
-  }, [position, feedback]); // refoca após bip ou avanço
+  }, [position, feedback, processedSequence.length]); // refoca após bip ou avanço ou mudança de sequência
 
   // ---------- Render ----------
   return (
