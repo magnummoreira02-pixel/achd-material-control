@@ -2,11 +2,10 @@ import * as XLSX from "xlsx";
 import { normalizeValue } from "../utils/validation.js";
 import { getExportFileName } from "../utils/formatting.js";
 
-export async function readSpreadsheetFile(file) {
-  const buffer = await file.arrayBuffer();
-  const workbook = XLSX.read(buffer, { type: "array" });
+// Parse síncrono (fallback quando Web Worker não está disponível)
+function parseSpreadsheetBuffer(buffer) {
+  const workbook = XLSX.read(new Uint8Array(buffer), { type: "array" });
   const parsedSheets = [];
-  let headers = [];
   let rows = [];
 
   workbook.SheetNames.forEach((name) => {
@@ -25,8 +24,52 @@ export async function readSpreadsheetFile(file) {
     throw new Error("A planilha não contém dados legíveis.");
   }
 
-  headers = Object.keys(rows[0]).filter((h) => h !== "__sheetName");
+  const headers = Object.keys(rows[0]).filter((h) => h !== "__sheetName");
   return { sheets: parsedSheets, headers, rows };
+}
+
+// Parse em Web Worker: mantém a UI fluida com planilhas muito grandes.
+// Cai para o parse síncrono se o Worker falhar.
+function parseInWorker(buffer) {
+  return new Promise((resolve, reject) => {
+    let worker;
+    try {
+      worker = new Worker(new URL("./excelWorker.js", import.meta.url), { type: "module" });
+    } catch (error) {
+      reject(error);
+      return;
+    }
+    worker.onmessage = (event) => {
+      worker.terminate();
+      const data = event.data || {};
+      if (data.error) {
+        reject(new Error(data.error));
+      } else {
+        resolve(data);
+      }
+    };
+    worker.onerror = () => {
+      worker.terminate();
+      reject(new Error("worker-failed"));
+    };
+    worker.postMessage({ buffer }, [buffer]);
+  });
+}
+
+export async function readSpreadsheetFile(file) {
+  const buffer = await file.arrayBuffer();
+  if (typeof Worker !== "undefined") {
+    try {
+      // buffer é transferido ao worker; clona para preservar o original no fallback
+      return await parseInWorker(buffer.slice(0));
+    } catch (error) {
+      if (error?.message !== "worker-failed") {
+        throw error;
+      }
+      // worker indisponível: segue com parse síncrono
+    }
+  }
+  return parseSpreadsheetBuffer(buffer);
 }
 
 export function buildBipagensRows(history, displayColumns = [], boxes = []) {

@@ -178,6 +178,7 @@ const App = () => {
   const [searchState, setSearchState] = useState("idle");
   const [dragOver, setDragOver] = useState(false);
   const [parseError, setParseError] = useState("");
+  const [isParsing, setIsParsing] = useState(false);
   const [theme, setTheme] = useState(() => storageService.loadTheme());
   const [history, setHistory] = useState(() => storageService.loadHistory());
   const [showFullHistory, setShowFullHistory] = useState(false);
@@ -306,6 +307,18 @@ const App = () => {
 
   const readyToSearch = hasData && idColumn && selectedRows.length > 0;
 
+  // Índice O(1) código -> linha. Reconstruído apenas quando a planilha/coluna muda,
+  // para que cada busca/bipagem não percorra a planilha inteira (lenta em arquivos grandes).
+  const rowIndexByCode = useMemo(() => {
+    const map = new Map();
+    if (!idColumn) return map;
+    for (const row of selectedRows) {
+      const key = normalizeValue(row[idColumn]);
+      if (key && !map.has(key)) map.set(key, row);
+    }
+    return map;
+  }, [selectedRows, idColumn]);
+
   useEffect(() => {
     if (readyToSearch && searchInputRef.current) {
       searchInputRef.current.focus();
@@ -351,31 +364,52 @@ const App = () => {
     ? getCodeColorRule(String(matchedTraitValue ?? ""), codeColorRules)
     : null;
 
-  const foundMaterialsCount =
-    history.filter((item) => item.status === "ENCONTRADO").length;
+  const foundMaterialsCount = useMemo(
+    () => history.filter((item) => item.status === "ENCONTRADO").length,
+    [history]
+  );
 
-  const notFoundMaterialsCount =
-    history.filter((item) => item.status === "NÃO ENCONTRADO").length;
+  const notFoundMaterialsCount = useMemo(
+    () => history.filter((item) => item.status === "NÃO ENCONTRADO").length,
+    [history]
+  );
 
   const latestReading = history[0];
 
   const activeBox =
     boxes.find((box) => box.id === activeBoxId) || null;
 
-  const inventoryRecords =
-    history.map((item) => ({
-      ...item,
-      description: displayColumns[0] ? item.rowData?.[displayColumns[0]] || "" : "",
-      box: boxes.find((box) => box.materials?.some((material) => normalizeValue(material.code) === normalizeValue(item.code))) || null
-    }));
+  // Mapa código -> caixa, evita varrer todas as caixas/materiais para cada item do histórico
+  const boxIndexByCode = useMemo(() => {
+    const map = new Map();
+    for (const box of boxes) {
+      for (const material of box.materials || []) {
+        const key = normalizeValue(material.code);
+        if (key && !map.has(key)) map.set(key, box);
+      }
+    }
+    return map;
+  }, [boxes]);
 
-  const filteredInventory =
-    inventoryRecords.filter((item) => {
-      const term = normalizeValue(inventoryQuery);
-      if (!term) return true;
-      return [item.code, item.description, item.box?.number, item.date, item.status]
-        .some((value) => normalizeValue(value).includes(term));
-    });
+  // Memoizado: sem isso, estes cálculos (histórico × caixas) rodavam em CADA render/tecla
+  const inventoryRecords = useMemo(
+    () =>
+      history.map((item) => ({
+        ...item,
+        description: displayColumns[0] ? item.rowData?.[displayColumns[0]] || "" : "",
+        box: boxIndexByCode.get(normalizeValue(item.code)) || null
+      })),
+    [history, displayColumns, boxIndexByCode]
+  );
+
+  const filteredInventory = useMemo(() => {
+    const term = normalizeValue(inventoryQuery);
+    if (!term) return inventoryRecords;
+    return inventoryRecords.filter((item) =>
+      [item.code, item.description, item.box?.number, item.date, item.status]
+        .some((value) => normalizeValue(value).includes(term))
+    );
+  }, [inventoryRecords, inventoryQuery]);
 
   // File processing functions
   const processFile = useCallback((file) => {
@@ -383,6 +417,7 @@ const App = () => {
       return;
     }
     setParseError("");
+    setIsParsing(true);
     excelService.readSpreadsheetFile(file)
       .then(({ sheets: parsedSheets, headers: hdrs, rows: allRows }) => {
         setSheets(parsedSheets);
@@ -400,7 +435,8 @@ const App = () => {
       .catch((err) => {
         console.error(err);
         setParseError(err?.message || "Não foi possível ler este arquivo. Confirme se é um .xlsx, .xls ou .csv válido.");
-      });
+      })
+      .finally(() => setIsParsing(false));
   }, []);
 
   const handleFileInput = (e) => {
@@ -441,13 +477,15 @@ const App = () => {
       return [];
     }
     const q = query.trim().toLowerCase();
-    return selectedRows
-      .filter((r) =>
-        String(r[idColumn] ?? "")
-          .toLowerCase()
-          .includes(q)
-      )
-      .slice(0, 8);
+    const result = [];
+    // parada antecipada: não varre a planilha inteira a cada tecla
+    for (const row of selectedRows) {
+      if (String(row[idColumn] ?? "").toLowerCase().includes(q)) {
+        result.push(row);
+        if (result.length >= 8) break;
+      }
+    }
+    return result;
   }, [selectedRows, idColumn, query, readyToSearch]);
 
   const runSearch = (value) => {
@@ -457,12 +495,7 @@ const App = () => {
       setSearchState("idle");
       return;
     }
-    const exact = selectedRows.find(
-      (r) =>
-        String(r[idColumn] ?? "")
-          .trim()
-          .toLowerCase() === q
-    );
+    const exact = rowIndexByCode.get(normalizeValue(q));
     if (exact) {
       setMatched(exact);
       setSearchState("found");
@@ -592,7 +625,7 @@ const App = () => {
 
   const updateBoxForMaterial = (code, exact, date, time) => {
     if (!activeBox) return;
-    const existingBox = boxes.find((box) => box.materials?.some((material) => normalizeValue(material.code) === normalizeValue(code)));
+    const existingBox = boxIndexByCode.get(normalizeValue(code));
     if (existingBox && existingBox.id !== activeBox.id) {
       const shouldTransfer = window.confirm(`Este material já está armazenado na CAIXA ${existingBox.number}.\n\nOK: transferir para ${activeBox.number}\nCancelar: manter na caixa atual`);
       if (!shouldTransfer) return;
@@ -629,9 +662,7 @@ const App = () => {
       if (searchInputRef.current) searchInputRef.current.focus();
       return;
     }
-    const exact = selectedRows.find(
-      (row) => normalizeValue(row[idColumn]) === normalizeValue(code)
-    );
+    const exact = rowIndexByCode.get(normalizeValue(code));
     const now = new Date();
     const date = now.toLocaleDateString("pt-BR");
     const time = now.toLocaleTimeString("pt-BR", { hour12: false });
@@ -671,7 +702,7 @@ const App = () => {
     Hora: item.time,
     Usuario: item.user || "",
     Status: item.status,
-    Caixa: boxes.find((box) => box.materials?.some((material) => normalizeValue(material.code) === normalizeValue(item.code)))?.number || ""
+    Caixa: boxIndexByCode.get(normalizeValue(item.code))?.number || ""
   }));
 
   const saveLocalHistory = async (format = "xlsx") => {
@@ -769,9 +800,7 @@ const App = () => {
     if (!normalizedQuery) {
       return;
     }
-    const exact = selectedRows.find(
-      (row) => normalizeValue(row[idColumn]) === normalizedQuery
-    );
+    const exact = rowIndexByCode.get(normalizedQuery);
     if (exact) {
       setMatched(exact);
       setSearchState("found");
@@ -902,6 +931,7 @@ const App = () => {
         columnCount={headers.length}
         dragOver={dragOver}
         parseError={parseError}
+        isParsing={isParsing}
         inputRef={inputRef}
         onDragOver={(e) => {
           e.preventDefault();

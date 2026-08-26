@@ -7,6 +7,7 @@ export default function ImportadorPlanilha({
   columnCount,
   dragOver,
   parseError,
+  isParsing = false,
   inputRef,
   onDragOver,
   onDragLeave,
@@ -56,6 +57,11 @@ export default function ImportadorPlanilha({
             <div style={{ marginTop: 6, fontSize: 13, color: "var(--muted)" }}>
               Formatos aceitos: XLSX, XLS, XLSB, CSV
             </div>
+            {isParsing && (
+              <div style={{ marginTop: 14, fontSize: 14, fontWeight: 700, color: "#22C55E" }}>
+                Processando planilha... aguarde
+              </div>
+            )}
           </div>
         ) : (
           <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
