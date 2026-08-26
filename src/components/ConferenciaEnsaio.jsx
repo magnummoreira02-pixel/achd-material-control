@@ -800,12 +800,12 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
         {processedSequence.length > 0 && (
           <div className="conf-table-wrapper">
             <table className="conf-table">
-               <thead>
+                <thead>
                   <tr>
                     <th>ORDEM</th>
-                    <th>ID</th>
-                    <th>RANGE</th>
-                    <th>ROW</th>
+                    <th className="conf-col conf-col-id">ID</th>
+                    <th className="conf-col conf-col-range">RANGE</th>
+                    <th className="conf-col conf-col-row">ROW</th>
                     {columnMap.quadra && <th>QUADRA</th>}
                     {columnMap.entry && <th>ENTRY</th>}
                     {columnMap.entryPrefix && <th>ENTRY PREFIX</th>}
@@ -832,9 +832,9 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
                       className={`conf-row-${isCurrent ? "current" : isDone ? "done" : ""}`}
                     >
                       <td>{globalIdx + 1}</td>
-                      <td>{record[columnMap.id ?? ""]}</td>
-                      <td>{record[columnMap.range ?? ""]}</td>
-                      <td>{record[columnMap.row ?? ""]}</td>
+                      <td className="conf-col conf-col-id">{record[columnMap.id ?? ""]}</td>
+                      <td className="conf-col conf-col-range">{record[columnMap.range ?? ""]}</td>
+                      <td className="conf-col conf-col-row">{record[columnMap.row ?? ""]}</td>
                       {columnMap.quadra && (
                         <td>{record[columnMap.quadra ?? ""] || "-"}</td>
                       )}
