@@ -6,8 +6,8 @@ import { guessIdColumn } from "../utils/validation.js";
 
 const CONFERENCIA_FILTROS = [
   { key: "local", label: "Local", options: [] }, // será preenchido dinamicamente da planilha
-  { key: "tipoPlantio", label: "Tipo de Plantio", options: ["4 LINHAS", "8 LINHAS", "PLANTIO MANUAL"] },
-  { key: "plantador", label: "Plantador", options: ["A", "B"] },
+  { key: "tipoPlantio", label: "Tipo de Plantio", options: ["8 LINHAS", "4 LINHAS", "PLANTIO MANUAL"] }, // fixo: apenas estas 3 opções
+  { key: "plantador", label: "Plantador", options: [] }, // valores A/B vêm da planilha (coluna plantador/planter/responsável)
   { key: "quadra", label: "Quadra", options: [] }, // será preenchido dinamicamente
   { key: "row", label: "ROW", options: ["TODOS"] } // será preenchido dinamicamente
 ];
@@ -39,32 +39,44 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
   const uniqueValues = useMemo(() => {
     if (!rows || rows.length === 0) return {};
     const map = {};
+    // Usa o mapeamento manual primeiro; senão tenta detecção automática.
+    const colFor = (key, candidates) => columnMap[key] || findColumn(headers, candidates);
+    const distinctVals = (col) => [
+      ...new Set(rows.map(r => r[col]).filter(v => v !== "" && v !== null && v !== undefined))
+    ];
     // local
-    const localCol = findColumn(headers, ["local", "localidade"]);
+    const localCol = colFor("local", ["local", "localidade"]);
     if (localCol) {
-      const vals = [...new Set(rows.map(r => r[localCol]).filter(v => v !== "" && v !== null && v !== undefined))].sort();
-      map.local = vals;
+      map.local = distinctVals(localCol).sort();
     }
-    // plantador
-    const plantadorCol = findColumn(headers, ["plantador", "planter"]);
+    // plantador: puxa A/B (ou os nomes reais) direto da planilha
+    const plantadorCol = colFor("plantador", [
+      "plantador", "planter", "responsavel", "responsável", "operador", "colaborador", "produtor"
+    ]);
     if (plantadorCol) {
-      const vals = [...new Set(rows.map(r => r[plantadorCol]).filter(v => v !== "" && v !== null && v !== undefined))].sort();
-      map.plantador = vals;
+      map.plantador = distinctVals(plantadorCol).sort();
     }
     // quadra
-    const quadraCol = findColumn(headers, ["quadra", "bloco"]);
+    const quadraCol = colFor("quadra", ["quadra", "bloco"]);
     if (quadraCol) {
-      const vals = [...new Set(rows.map(r => r[quadraCol]).filter(v => v !== "" && v !== null && v !== undefined))].sort();
-      map.quadra = vals;
+      map.quadra = distinctVals(quadraCol).sort();
     }
-    // row
-    const rowCol = findColumn(headers, ["row", "linha"]);
+    // row: TODAS as linhas da planilha (valores numéricos OU texto), para permitir
+    // bipar uma linha separada ou refazer a conferência sem trocar de planilha.
+    const rowCol = colFor("row", ["row", "linha"]);
     if (rowCol) {
-      const nums = [...new Set(rows.map(r => Number(r[rowCol])).filter(n => !isNaN(n)))].sort((a,b)=>a-b);
-      map.row = [...new Set(["TODOS", ...nums.map(n=>String(n))])];
+      const rawVals = [...new Set(rows.map(r => r[rowCol]).filter(v => v !== "" && v !== null && v !== undefined))];
+      const strVals = [...new Set(rawVals.map(v => String(v)))];
+      strVals.sort((a, b) => {
+        const aNum = Number(a);
+        const bNum = Number(b);
+        if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
+        return a.localeCompare(b);
+      });
+      map.row = ["TODOS", ...strVals];
     }
     return map;
-  }, [rows, headers]);
+  }, [rows, headers, columnMap]);
 
   // ---------- Auto-detect column map ----------
   useEffect(() => {
@@ -80,8 +92,10 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
     detect.row = findColumn(headers, ["row", "linha"]);
     // RANGE
     detect.range = findColumn(headers, ["range", "faixa"]);
-    // PLANTADOR
-    detect.plantador = findColumn(headers, ["plantador", "planter"]);
+    // PLANTADOR (A/B ou nome) — detecção ampliada para puxar da planilha
+    detect.plantador = findColumn(headers, [
+      "plantador", "planter", "responsavel", "responsável", "operador", "colaborador", "produtor"
+    ]);
     // QUADRA
     detect.quadra = findColumn(headers, ["quadra", "bloco"]);
     // LOCAL
@@ -92,15 +106,27 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
     detect.sentido = findColumn(headers, ["sentido", "direcao", "direção"]);
     // ORDEM DE BEEP
     detect.ordemBeep = findColumn(headers, ["ordem de beep", "beep order", "sequencia"]);
+    // ENTRY / PREFIXO / SUFIXO / REP / BOOK NAME (colunas exibidas na tabela)
+    detect.entry = findColumn(headers, ["entry", "entrada"]);
+    detect.entryPrefix = findColumn(headers, ["entry prefix", "prefix entry", "prefixo entry", "prefixo"]);
+    detect.entrySuffix = findColumn(headers, ["entry suffix", "suffix entry", "sufixo entry", "sufixo"]);
+    detect.rep = findColumn(headers, ["rep", "repeticao", "repetição"]);
+    detect.bookName = findColumn(headers, ["book name", "nome do livro", "livro", "book"]);
 
     setColumnMap(detect);
-    // checar obrigatórios
+    // checar obrigatórias
     const missing = [];
     if (!detect.id) missing.push("ID");
     if (!detect.row) missing.push("ROW");
     if (!detect.range) missing.push("RANGE");
+    // todas as colunas lógicas ainda não mapeadas (inclui opcionais) aparecem no aviso
+    const logicalKeys = ["id", "row", "range", "plantador", "quadra", "local", "tipoPlantio", "sentido", "ordemBeep", "entry", "entryPrefix", "entrySuffix", "rep", "bookName"];
+    const unmapped = logicalKeys.filter(k => !detect[k]).map(k => k.toUpperCase()).filter(k => !missing.includes(k));
     if (missing.length > 0) {
-      setColumnError({ missing, message: `Colunas obrigatórias não encontradas: ${missing.join(", ")}. Mapeie manualmente abaixo.` });
+      setColumnError({ missing: [...missing, ...unmapped], message: `Colunas obrigatórias não encontradas: ${missing.join(", ")}. Mapeie manualmente abaixo.` });
+    } else if (unmapped.length > 0) {
+      // opcionais sem detecção: informativo — permite mapear, não bloqueia a conferência
+      setColumnError({ missing: unmapped, message: "Algumas colunas não foram detectadas automaticamente. Mapeie abaixo ou feche para usar a detecção automática." });
     } else {
       setColumnError(null);
     }
@@ -169,6 +195,14 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
     }
     return sequence;
   }, [rows, filtros, columnMap, columnMap.id, columnMap.range, columnMap.row, columnMap.local, columnMap.plantador, columnMap.quadra, columnMap.tipoPlantio]);
+
+  // ---------- Trava a posição quando a sequência muda ----------
+  // Ao trocar filtros/linha (inclusive após terminar ou limpar), se a nova sequência
+  // for mais curta, a posição é ajustada — evita ficar preso na tela "Finalizada"
+  // e bloqueando a próxima conferência.
+  useEffect(() => {
+    setPosition(prev => (prev > processedSequence.length ? processedSequence.length : prev));
+  }, [processedSequence.length]);
 
   // ---------- Próximo esperado ----------
   const nextExpected = useMemo(() => {
@@ -325,6 +359,8 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
     setPosition(0);
     setFeedback(null);
     setLastBip("");
+    // volta aos filtros: começa uma nova conferência do zero
+    setFiltros({ local: "", tipoPlantio: "", plantador: "", quadra: "", row: "TODOS" });
     // limpa histórico de conferência (mantém o carregado da storage? spec diz só resetar posição)
     // Porém histórico é separado do histórico de estoque. Mantemos o array em memória, limpo storage.
     setHistory([]);
@@ -346,9 +382,14 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
         quadra: "QUADRA",
         tipoPlantio: "TIPO DE PLANTIO",
         sentido: "SENTIDO",
-        ordemBeep: "ORDEM DE BEEP"
+        ordemBeep: "ORDEM DE BEEP",
+        entry: "ENTRY",
+        entryPrefix: "ENTRY PREFIX",
+        entrySuffix: "ENTRY SUFFIX",
+        rep: "REP",
+        bookName: "BOOK NAME"
       };
-      const options = [...new Set((rows.map(r => r[columnMap[key] ?? ""]).filter(v => v !== "")))] ;
+      const options = headers || [];
       return (
         <div key={key} style={{ marginBottom: 12 }}>
           <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>{labelMap[key]}</label>
@@ -409,12 +450,14 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
 
         {/* Filtros */}
         <div className="conf-filters">
-          {CONFERENCIA_FILTROS.map(({ key, label, options }) => {
+          {CONFERENCIA_FILTROS.map(({ key, label, options: staticOptions }) => {
             // Filtros dinâmicos (local, plantador, quadra, row) recebem options via uniqueValues
-            const dynOpts = Array.isArray(options) && options.length > 0 ? options :
+            const isDynamic = key === "local" || key === "plantador" || key === "quadra" || key === "row";
+            const dynamicOptions =
               uniqueValues[key] && Array.isArray(uniqueValues[key]) ? uniqueValues[key] : [];
-            const isDynamic = key === "quadra" || key === "row" || key === "local" || key === "plantador";
-            const showAllOption = key === "row" && !filtros.tipoPlantio ? false : true; // sempre mostrar TODOS para ROW
+            // ROW: TODAS as linhas da planilha (+ TODOS). Tipo de Plantio: fixo (só as 3 opções).
+            const opts = isDynamic && dynamicOptions.length ? dynamicOptions : staticOptions;
+            const isTipoPlantio = key === "tipoPlantio";
             return (
               <div key={key} className="conf-filter-item">
                 <label>{label}</label>
@@ -424,13 +467,9 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
                   disabled={!rows.length}
                   style={{ minWidth: 0 }}
                 >
-                  {showAllOption && <option value="TODOS">TODOS</option>}
-                  {dynOpts.map(opt => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                  {/* Opções estáticas (se não dinâmico) */}
-                  {!isDynamic && options.map(opt => (
-                    <option key={opt} value={opt}>{opt}</option>
+                  {(isTipoPlantio || !opts.length) && <option value="" disabled hidden>-- Selecione --</option>}
+                  {opts.map(opt => (
+                    <option key={`${key}-${opt}`} value={opt}>{opt}</option>
                   ))}
                 </select>
               </div>
@@ -458,6 +497,31 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
                     QUADRA: {nextExpected[columnMap.quadra] ?? "-"}
                   </div>
                 )}
+                {columnMap.entry && (
+                  <div className="conf-status-value" style={{ marginTop: 4 }}>
+                    ENTRY: {nextExpected[columnMap.entry] ?? "-"}
+                  </div>
+                )}
+                {columnMap.entryPrefix && (
+                  <div className="conf-status-value" style={{ marginTop: 4 }}>
+                    ENTRY PREFIX: {nextExpected[columnMap.entryPrefix] ?? "-"}
+                  </div>
+                )}
+                {columnMap.entrySuffix && (
+                  <div className="conf-status-value" style={{ marginTop: 4 }}>
+                    ENTRY SUFFIX: {nextExpected[columnMap.entrySuffix] ?? "-"}
+                  </div>
+                )}
+                {columnMap.rep && (
+                  <div className="conf-status-value" style={{ marginTop: 4 }}>
+                    REP: {nextExpected[columnMap.rep] ?? "-"}
+                  </div>
+                )}
+                {columnMap.bookName && (
+                  <div className="conf-status-value" style={{ marginTop: 4 }}>
+                    BOOK NAME: {nextExpected[columnMap.bookName] ?? "-"}
+                  </div>
+                )}
                 {columnMap.sentido && (
                   <div className="conf-status-value" style={{ marginTop: 4 }}>
                     SENTIDO: {nextExpected[columnMap.sentido] || "-"}
@@ -475,7 +539,7 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
                 <div className="conf-feedback-title">{feedback.message}</div>
                 {feedback.details.expected && feedback.details.biped && (
                   <div className="conf-feedback-details">
-                    <div><strong>ESPERADO:</strong> ID {feedback.details.expected[columnMap.id ?? ""]} / RANGE {feedback.details.expected[columnMap.range ?? ""]}</div>
+                    <div><strong>ESPERADO:</strong> ID {feedback.details.expected[columnMap.id ?? ""]} / RANGE {feedback.details.expected[columnMap.range ?? ""]}{columnMap.plantador ? ` / PLANTADOR ${feedback.details.expected[columnMap.plantador] ?? "-"}` : ""}</div>
                     <div><strong>BIPADO:</strong> ID {feedback.details.biped[columnMap.id ?? ""] || feedback.details.biped.id} / RANGE {feedback.details.biped[columnMap.range ?? ""] || feedback.details.biped.range}</div>
                   </div>
                 )}
@@ -484,6 +548,11 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
               <div className="conf-feedback conf-feedback-info">
                 <div className="conf-feedback-title">AGUARDANDO BIPAGEM</div>
                 <div className="conf-feedback-details">Posicione o cursor no campo abaixo e bipar o material</div>
+              </div>
+            )}
+            {columnMap.plantador && nextExpected && (
+              <div className="conf-status-value" style={{ marginTop: 10 }}>
+                PLANTADOR (A/B): <strong style={{ fontWeight: 800 }}>{nextExpected[columnMap.plantador] ?? "-"}</strong>
               </div>
             )}
           </div>
@@ -560,16 +629,16 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
               <div className="conf-stat-value">{stats.confirmed}</div>
             </div>
             <div className="conf-stat conf-stat-error">
-              <div class="conf-stat-label">ERROS</div>
-              <div class="conf-stat-value">{stats.errors}</div>
+              <div className="conf-stat-label">ERROS</div>
+              <div className="conf-stat-value">{stats.errors}</div>
             </div>
-            <div class="conf-stat conf-stat-warning">
-              <div class="conf-stat-label">RECONFERÊNCIAS</div>
-              <div class="conf-stat-value">{stats.reconfirmations}</div>
+            <div className="conf-stat conf-stat-warning">
+              <div className="conf-stat-label">RECONFERÊNCIAS</div>
+              <div className="conf-stat-value">{stats.reconfirmations}</div>
             </div>
-            <div class="conf-stat conf-stat-pending">
-              <div class="conf-stat-label">RESTANTES</div>
-              <div class="conf-stat-value">{stats.remaining}</div>
+            <div className="conf-stat conf-stat-pending">
+              <div className="conf-stat-label">RESTANTES</div>
+              <div className="conf-stat-value">{stats.remaining}</div>
             </div>
           </div>
         </div>
@@ -579,15 +648,20 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
           <div className="conf-table-wrapper">
             <table className="conf-table">
                <thead>
-                 <tr>
-                   <th>ORDEM</th>
-                   <th>ID</th>
-                   <th>RANGE</th>
-                   <th>ROW</th>
-                   {columnMap.quadra && <th>QUADRA</th>}
-                   {columnMap.sentido && <th>SENTIDO</th>}
-                   <th>STATUS</th>
-                 </tr>
+                  <tr>
+                    <th>ORDEM</th>
+                    <th>ID</th>
+                    <th>RANGE</th>
+                    <th>ROW</th>
+                    {columnMap.quadra && <th>QUADRA</th>}
+                    {columnMap.entry && <th>ENTRY</th>}
+                    {columnMap.entryPrefix && <th>ENTRY PREFIX</th>}
+                    {columnMap.entrySuffix && <th>ENTRY SUFFIX</th>}
+                    {columnMap.rep && <th>REP</th>}
+                    {columnMap.bookName && <th>BOOK NAME</th>}
+                    {columnMap.sentido && <th>SENTIDO</th>}
+                    <th>STATUS</th>
+                  </tr>
                </thead>
               <tbody>
                 {processedSequence.slice(Math.max(0, position - 2), position + 13).map((record, idx) => {
@@ -609,6 +683,21 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
                       <td>{record[columnMap.row ?? ""]}</td>
                       {columnMap.quadra && (
                         <td>{record[columnMap.quadra ?? ""] || "-"}</td>
+                      )}
+                      {columnMap.entry && (
+                        <td>{record[columnMap.entry ?? ""] || "-"}</td>
+                      )}
+                      {columnMap.entryPrefix && (
+                        <td>{record[columnMap.entryPrefix ?? ""] || "-"}</td>
+                      )}
+                      {columnMap.entrySuffix && (
+                        <td>{record[columnMap.entrySuffix ?? ""] || "-"}</td>
+                      )}
+                      {columnMap.rep && (
+                        <td>{record[columnMap.rep ?? ""] || "-"}</td>
+                      )}
+                      {columnMap.bookName && (
+                        <td>{record[columnMap.bookName ?? ""] || "-"}</td>
                       )}
                       {columnMap.sentido && (
   <td>{record[columnMap.sentido ?? ""] || "-"}</td>

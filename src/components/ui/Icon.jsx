@@ -15,7 +15,9 @@ const paths = {
   history: "M13 3a9 9 0 00-9 9H1l4 4 4-4H6a7 7 0 117 7 6.9 6.9 0 01-4.9-2l-1.4 1.4A9 9 0 1013 3zm-1 5v5l4.3 2.5.7-1.2-3.5-2.1V8H12z",
   columns: "M4 4h7v7H4V4zm9 0h7v7h-7V4zM4 13h7v7H4v-7zm9 0h7v7h-7v-7z",
   inventory: "M12 3l10 5-10 5L2 8l10-5zm0 2.3L6.9 8 12 10.7 17.1 8 12 5.3zM2 12l10 5 10-5-2.1-1L12 15 4.1 11 2 12zm0 4l10 5 10-5-2.1-1L12 19l-7.9-4L2 16z",
-  menu: "M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z"
+  menu: "M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z",
+  "arrow-clockwise": "M17.65 6.35A8 8 0 1 0 20 12h-2a6 6 0 1 1-1.76-4.24L13 11h7V4l-2.35 2.35z",
+  refresh: "M17.65 6.35A8 8 0 1 0 20 12h-2a6 6 0 1 1-1.76-4.24L13 11h7V4l-2.35 2.35z"
 };
 
 export default function Icon({ name, size = 20, color = "currentColor", style }) {
