@@ -147,8 +147,9 @@ export function applyFilters(records, filters, columnMap) {
       const recordValue = record[columnName];
       if (recordValue === null || recordValue === undefined) return false;
 
-      // Comparação normalizada (case insensitive, sem acentos, trim)
-      return normalizeValue(recordValue) === normalizeValue(filterValue);
+      // Todas as comparações são obrigatórias (AND):
+      // não retorna verdadeiro na primeira — só retorna falso se alguma falhar.
+      if (normalizeValue(recordValue) !== normalizeValue(filterValue)) return false;
     }
     return true;
   });

@@ -124,9 +124,6 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
     const unmapped = logicalKeys.filter(k => !detect[k]).map(k => k.toUpperCase()).filter(k => !missing.includes(k));
     if (missing.length > 0) {
       setColumnError({ missing: [...missing, ...unmapped], message: `Colunas obrigatórias não encontradas: ${missing.join(", ")}. Mapeie manualmente abaixo.` });
-    } else if (unmapped.length > 0) {
-      // opcionais sem detecção: informativo — permite mapear, não bloqueia a conferência
-      setColumnError({ missing: unmapped, message: "Algumas colunas não foram detectadas automaticamente. Mapeie abaixo ou feche para usar a detecção automática." });
     } else {
       setColumnError(null);
     }
@@ -203,6 +200,15 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
   useEffect(() => {
     setPosition(prev => (prev > processedSequence.length ? processedSequence.length : prev));
   }, [processedSequence.length]);
+
+  // ---------- Ao trocar qualquer filtro, reinicia a conferência do zero ----------
+  // Evita travamento/confusão: selecionou Plantador A → só as linhas A, do início;
+  // selecionou Plantador B → só as linhas B, do início.
+  useEffect(() => {
+    setPosition(0);
+    setFeedback(null);
+    setLastBip("");
+  }, [filtros]);
 
   // ---------- Próximo esperado ----------
   const nextExpected = useMemo(() => {
@@ -539,7 +545,7 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
                 <div className="conf-feedback-title">{feedback.message}</div>
                 {feedback.details.expected && feedback.details.biped && (
                   <div className="conf-feedback-details">
-                    <div><strong>ESPERADO:</strong> ID {feedback.details.expected[columnMap.id ?? ""]} / RANGE {feedback.details.expected[columnMap.range ?? ""]}{columnMap.plantador ? ` / PLANTADOR ${feedback.details.expected[columnMap.plantador] ?? "-"}` : ""}</div>
+                    <div><strong>ESPERADO:</strong> ID {feedback.details.expected[columnMap.id ?? ""]} / RANGE {feedback.details.expected[columnMap.range ?? ""]}</div>
                     <div><strong>BIPADO:</strong> ID {feedback.details.biped[columnMap.id ?? ""] || feedback.details.biped.id} / RANGE {feedback.details.biped[columnMap.range ?? ""] || feedback.details.biped.range}</div>
                   </div>
                 )}
@@ -548,11 +554,6 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
               <div className="conf-feedback conf-feedback-info">
                 <div className="conf-feedback-title">AGUARDANDO BIPAGEM</div>
                 <div className="conf-feedback-details">Posicione o cursor no campo abaixo e bipar o material</div>
-              </div>
-            )}
-            {columnMap.plantador && nextExpected && (
-              <div className="conf-status-value" style={{ marginTop: 10 }}>
-                PLANTADOR (A/B): <strong style={{ fontWeight: 800 }}>{nextExpected[columnMap.plantador] ?? "-"}</strong>
               </div>
             )}
           </div>
@@ -659,6 +660,7 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
                     {columnMap.entrySuffix && <th>ENTRY SUFFIX</th>}
                     {columnMap.rep && <th>REP</th>}
                     {columnMap.bookName && <th>BOOK NAME</th>}
+                    {columnMap.plantador && <th>PLANTADOR</th>}
                     {columnMap.sentido && <th>SENTIDO</th>}
                     <th>STATUS</th>
                   </tr>
@@ -698,6 +700,9 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
                       )}
                       {columnMap.bookName && (
                         <td>{record[columnMap.bookName ?? ""] || "-"}</td>
+                      )}
+                      {columnMap.plantador && (
+                        <td>{record[columnMap.plantador ?? ""] || "-"}</td>
                       )}
                       {columnMap.sentido && (
   <td>{record[columnMap.sentido ?? ""] || "-"}</td>
