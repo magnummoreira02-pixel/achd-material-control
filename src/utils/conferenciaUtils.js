@@ -119,6 +119,35 @@ export function sortRecordsByIdRange(records, idColumn, rangeColumn, direction) 
 }
 
 /**
+ * Remove registros duplicados pelo ID (mesma planilha repetida em várias abas
+ * ou linhas duplicadas), mantendo exatamente UMA ocorrência de cada ID.
+ * Preserva a ordem original de primeira aparição. Quando o ID aparece mais
+ * de uma vez, prefere o registro cujo RANGE não está vazio.
+ * @param {Array<Object>} records - Registros filtrados da planilha
+ * @param {string} idColumn - Nome da coluna de ID
+ * @param {string} rangeColumn - Nome da coluna de RANGE
+ * @returns {Array<Object>} - Array sem duplicatas por ID
+ */
+export function dedupeById(records, idColumn, rangeColumn) {
+  if (!Array.isArray(records) || records.length === 0) return [];
+  const buckets = new Map();
+  for (const record of records) {
+    const key = normalizeValue(record?.[idColumn]);
+    if (!key) continue;
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(record);
+  }
+  const result = [];
+  for (const bucket of buckets.values()) {
+    const preferred =
+      bucket.find((r) => r[rangeColumn] !== "" && r[rangeColumn] !== null && r[rangeColumn] !== undefined) ||
+      bucket[0];
+    result.push(preferred);
+  }
+  return result;
+}
+
+/**
  * Aplica múltiplos filtros aos registros
  * @param {Array<Object>} records - Registros a filtrar
  * @param {Object} filters - Objeto com chaves = nomes de colunas, valores = valores filtrados

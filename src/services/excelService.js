@@ -240,3 +240,161 @@ export function downloadBlob(blob, fileName) {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
   return fileName;
 }
+
+// ---------------------------------------------------------------------------
+// Progresso da Conferência de Ensaio
+// ---------------------------------------------------------------------------
+
+const CONF_STATUS_SHEET = "CONFERENCIA STATUS";
+const MIME_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+const CONF_OPTIONAL_LABELS = {
+  quadra: "QUADRA",
+  entry: "ENTRY",
+  entryPrefix: "ENTRY PREFIX",
+  entrySuffix: "ENTRY SUFFIX",
+  rep: "REP",
+  bookName: "BOOK NAME",
+  plantador: "PLANTADOR",
+  sentido: "SENTIDO"
+};
+
+/**
+ * Monta as linhas da aba CONFERENCIA STATUS: uma linha por item da sequência
+ * de bipagem, com status por posição (CONFERIDO / AGUARDANDO / PENDENTE),
+ * último evento registrado no histórico e data/hora do último bip.
+ */
+export function buildConferenciaStatusRows(sequence = [], columnMap = {}, position = 0, historyRecords = [], filterCtx = {}) {
+  // Último evento por (contexto de filtros + ID bipado). O histórico chega
+  // mais novo primeiro, então a primeira ocorrência já é a mais recente.
+  const latestByContextAndId = new Map();
+  for (const record of historyRecords || []) {
+    const idKey = normalizeValue(record.bipadoId);
+    if (!idKey) continue;
+    const ctxKey = [
+      record.local ?? "",
+      record.tipoPlantio ?? "",
+      record.plantador ?? "",
+      record.quadra ?? "",
+      record.row ?? ""
+    ].join("||");
+    const mapKey = `${ctxKey}|${idKey}`;
+    if (!latestByContextAndId.has(mapKey)) latestByContextAndId.set(mapKey, record);
+  }
+  const currentContext = [
+    filterCtx.local ?? "",
+    filterCtx.tipoPlantio ?? "",
+    filterCtx.plantador ?? "",
+    filterCtx.quadra ?? "",
+    filterCtx.row ?? ""
+  ].join("||");
+
+  return sequence.map((record, index) => {
+    const event =
+      latestByContextAndId.get(`${currentContext}|${normalizeValue(record[columnMap.id])}`) || null;
+    const row = {
+      ORDEM: index + 1,
+      ID: record[columnMap.id] ?? "",
+      RANGE: record[columnMap.range] ?? "",
+      ROW: columnMap.row ? record[columnMap.row] ?? "" : ""
+    };
+    for (const [key, label] of Object.entries(CONF_OPTIONAL_LABELS)) {
+      if (columnMap[key]) row[label] = record[columnMap[key]] ?? "";
+    }
+    row["TIPO DE PLANTIO"] = filterCtx.tipoPlantio || "";
+    row.STATUS = index < position ? "CONFERIDO" : index === position ? "AGUARDANDO" : "PENDENTE";
+    row["ULTIMO EVENTO"] = event ? event.status : "";
+    row["DATA BIP"] = "";
+    row["HORA BIP"] = "";
+    if (event?.timestamp && !isNaN(new Date(event.timestamp))) {
+      const stampDate = new Date(event.timestamp);
+      row["DATA BIP"] = stampDate.toLocaleDateString("pt-BR");
+      row["HORA BIP"] = stampDate.toLocaleTimeString("pt-BR", { hour12: false });
+    }
+    return row;
+  });
+}
+
+/**
+ * Monta o workbook completo do progresso: cada aba original da planilha
+ * importada é recriada e ao final entra a aba CONFERENCIA STATUS.
+ */
+export function buildConferenciaFullWorkbook({ originalRows = [], statusRows = [] }) {
+  const workbook = XLSX.utils.book_new();
+  const groups = new Map();
+  for (const originalRow of originalRows || []) {
+    const sheetName = String(originalRow.__sheetName || "PLANILHA");
+    if (!groups.has(sheetName)) groups.set(sheetName, []);
+    const copy = { ...originalRow };
+    delete copy.__sheetName;
+    groups.get(sheetName).push(copy);
+  }
+
+  const usedNames = new Set();
+  for (const [name, sheetRows] of groups.entries()) {
+    let sheetName = sanitizeSheetName(name);
+    let suffix = 1;
+    while (usedNames.has(sheetName)) {
+      sheetName = sanitizeSheetName(`${name} (${suffix++})`);
+    }
+    usedNames.add(sheetName);
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(sheetRows), sheetName);
+  }
+
+  let statusName = CONF_STATUS_SHEET;
+  let statusSuffix = 1;
+  while (usedNames.has(statusName)) {
+    statusName = sanitizeSheetName(`${CONF_STATUS_SHEET} (${statusSuffix++})`);
+  }
+  const statusContent = statusRows.length ? statusRows : [{ AVISO: "Nenhuma sequência de conferência ativa." }];
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(statusContent), statusName);
+
+  return workbook;
+}
+
+/**
+ * Gera o arquivo Excel completo do progresso (abas originais + CONFERENCIA STATUS)
+ * e dispara o download no navegador.
+ * @returns {string} nome do arquivo gerado
+ */
+export function downloadConferenciaProgressWorkbook({
+  originalRows,
+  sequence,
+  columnMap,
+  position,
+  historyRecords,
+  filterCtx
+}) {
+  const statusRows = buildConferenciaStatusRows(sequence, columnMap, position, historyRecords, filterCtx);
+  const workbook = buildConferenciaFullWorkbook({ originalRows, statusRows });
+  const fileName = getExportFileName("xlsx", "Conferencia_Progresso");
+  downloadBlob(
+    new Blob([XLSX.write(workbook, { bookType: "xlsx", type: "array" })], { type: MIME_XLSX }),
+    fileName
+  );
+  return fileName;
+}
+
+/**
+ * Atualiza Progresso_Conferencia.xlsx dentro da pasta escolhida pelo usuário
+ * (File System Access API), contendo somente a aba CONFERENCIA STATUS.
+ * Chamado a cada bipagem quando o auto-salvamento está ativo.
+ * @returns {Promise<boolean>} true se gravou com sucesso
+ */
+export async function writeConferenciaProgressToDirectory(dirHandle, statusRows = []) {
+  if (!dirHandle) return false;
+  try {
+    const workbook = XLSX.utils.book_new();
+    const content = statusRows.length ? statusRows : [{ AVISO: "Nenhuma sequência de conferência ativa." }];
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(content), sanitizeSheetName(CONF_STATUS_SHEET));
+    const blob = new Blob([XLSX.write(workbook, { bookType: "xlsx", type: "array" })], { type: MIME_XLSX });
+    const fileHandle = await dirHandle.getFileHandle("Progresso_Conferencia.xlsx", { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    return true;
+  } catch (error) {
+    console.warn("Falha ao gravar o progresso da conferência na pasta.", error);
+    return false;
+  }
+}

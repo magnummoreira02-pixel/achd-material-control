@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import Icon from "./ui/Icon.jsx";
-import { getConferenciaDirection, normalizeValue, findColumn, sortRecordsByIdRange, applyFilters, findPositionInSequence, calculateRollbackPosition, evaluateBip } from "../utils/conferenciaUtils.js";
+import { getConferenciaDirection, normalizeValue, findColumn, sortRecordsByIdRange, applyFilters, findPositionInSequence, calculateRollbackPosition, evaluateBip, dedupeById } from "../utils/conferenciaUtils.js";
 import * as conferenciaService from "../services/conferenciaService.js";
+import { buildConferenciaStatusRows, downloadConferenciaProgressWorkbook, writeConferenciaProgressToDirectory } from "../services/excelService.js";
 import { guessIdColumn } from "../utils/validation.js";
 
 const CONFERENCIA_FILTROS = [
@@ -11,6 +12,17 @@ const CONFERENCIA_FILTROS = [
   { key: "quadra", label: "Quadra", options: [] }, // será preenchido dinamicamente
   { key: "row", label: "ROW", options: ["TODOS"] } // será preenchido dinamicamente
 ];
+
+// Contexto de filtros usado nos registros de histórico e nos arquivos Excel
+function getFilterContext(f) {
+  return {
+    local: f.local || "",
+    tipoPlantio: f.tipoPlantio || "",
+    plantador: f.plantador || "",
+    quadra: f.quadra || "",
+    row: f.row === "TODOS" ? "" : f.row
+  };
+}
 
 export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = "", displayColumns = [] }) {
   // ---------- Estado de filtros ----------
@@ -160,8 +172,19 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
 
     filtered = applyFilters(filtered, uiFilters, columnMapForFilters);
 
+    // Cada ID aparece exatamente UMA vez na sequência (abas repetidas ou
+    // linhas duplicadas da planilha não geram mais bipagens tripladas).
+    filtered = dedupeById(filtered, columnMap.id, columnMap.range);
+
     // Se ainda vazio
     if (filtered.length === 0) return [];
+
+    // PLANTIO MANUAL: sequência única classificada por ID CRESCENTE,
+    // sem agrupar por ROW.
+    if (filtros.tipoPlantio === "PLANTIO MANUAL") {
+      const sortedAll = sortRecordsByIdRange(filtered, columnMap.id, columnMap.range, "CRESCENTE");
+      return sortedAll;
+    }
 
     // Agrupa por ROW (valor da coluna row)
     const rowCol = columnMap.row;
@@ -210,6 +233,7 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
     setPosition(0);
     setFeedback(null);
     setLastBip("");
+    finishedExportedRef.current = false;
   }, [filtros]);
 
   // ---------- Próximo esperado ----------
@@ -227,6 +251,75 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
     const remaining = Math.max(0, total - (confirmed + errors + reconfirmations));
     return { confirmed, errors, reconfirmations, total, remaining };
   }, [history, processedSequence.length]);
+
+  // ---------- Exportação Excel do progresso ----------
+  const autoSaveDirRef = useRef(null); // FileSystemDirectoryHandle da pasta escolhida
+  const finishedExportedRef = useRef(false); // garante export único ao finalizar
+  const [autoSaveActive, setAutoSaveActive] = useState(false);
+  const [excelMsg, setExcelMsg] = useState("");
+
+  const showExcelMsg = useCallback((message) => {
+    setExcelMsg(message);
+    setTimeout(() => setExcelMsg(""), 6000);
+  }, []);
+
+  // Grava o arquivo Progresso_Conferencia.xlsx na pasta escolhida
+  // (chamado a cada bipagem quando o auto-salvamento está ativo).
+  const persistFolderProgress = useCallback((historySnapshot, posSnapshot) => {
+    const dir = autoSaveDirRef.current;
+    if (!dir || processedSequence.length === 0) return;
+    writeConferenciaProgressToDirectory(
+      dir,
+      buildConferenciaStatusRows(processedSequence, columnMap, posSnapshot, historySnapshot, getFilterContext(filtros))
+    );
+  }, [processedSequence, columnMap, filtros]);
+
+  // Exporta workbook completo: abas originais da planilha + aba CONFERENCIA STATUS
+  const handleExportExcel = useCallback(() => {
+    if (!processedSequence.length) return;
+    try {
+      const name = downloadConferenciaProgressWorkbook({
+        originalRows: rows,
+        sequence: processedSequence,
+        columnMap,
+        position,
+        historyRecords: history,
+        filterCtx: getFilterContext(filtros)
+      });
+      showExcelMsg(`Arquivo Excel gerado com a aba CONFERENCIA STATUS: ${name}`);
+    } catch (error) {
+      console.error(error);
+      showExcelMsg("Não foi possível gerar o arquivo Excel do progresso.");
+    }
+  }, [processedSequence, rows, columnMap, position, history, filtros, showExcelMsg]);
+
+  // Ativa/desativa o salvamento automático em pasta (a cada bipagem)
+  const toggleAutoSave = useCallback(async () => {
+    if (autoSaveDirRef.current) {
+      autoSaveDirRef.current = null;
+      setAutoSaveActive(false);
+      showExcelMsg("Salvamento automático desativado.");
+      return;
+    }
+    if (typeof window === "undefined" || !window.showDirectoryPicker) {
+      showExcelMsg("Este navegador não permite salvar em pasta automaticamente. Use EXPORTAR PROGRESSO.");
+      return;
+    }
+    try {
+      const dir = await window.showDirectoryPicker({ mode: "readwrite" });
+      autoSaveDirRef.current = dir;
+      setAutoSaveActive(true);
+      if (processedSequence.length > 0) {
+        persistFolderProgress(history, position);
+      }
+      showExcelMsg(`Auto-salvamento ativo: Progresso_Conferencia.xlsx será atualizado na pasta escolhida a cada bipagem.`);
+    } catch (error) {
+      if (error?.name !== "AbortError") {
+        console.error(error);
+        showExcelMsg("Não foi possível abrir a pasta selecionada.");
+      }
+    }
+  }, [processedSequence.length, history, position, persistFolderProgress, showExcelMsg]);
 
   // ---------- Funções de ação ----------
   const handleBip = useCallback((value) => {
@@ -288,6 +381,8 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
         conferenciaService.saveConferencia(updated);
         return updated;
       });
+      // grava progresso no Excel da pasta (se auto-salvamento ativo)
+      persistFolderProgress([historyRecord, ...history], position);
       setLastBip("");
       setTimeout(() => inputRef.current?.focus(), 0);
       return;
@@ -333,9 +428,11 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
     conferenciaService.saveConferencia(newHistory);
 
     // Atualiza feedback e position
+    let effectivePos = position;
     if (evalResult.status === "CORRECT") {
       // Avança para o próximo
-      setPosition(prev => Math.min(prev + 1, processedSequence.length));
+      effectivePos = Math.min(position + 1, processedSequence.length);
+      setPosition(effectivePos);
       setFeedback({
         status: "SUCCESS",
         message: evalResult.message,
@@ -346,6 +443,7 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
     } else {
       // ERRO: volta 5 posições
       const newPos = calculateRollbackPosition(position, processedSequence.length);
+      effectivePos = newPos;
       setPosition(newPos);
       setFeedback({
         status: "ERROR",
@@ -356,10 +454,37 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
       conferenciaService.vibrateError();
     }
 
+    // grava progresso no Excel da pasta (se auto-salvamento ativo)
+    persistFolderProgress(newHistory, effectivePos);
+
     // limpa input e foca para o próximo bip
     setLastBip("");
     setTimeout(() => inputRef.current?.focus(), 0);
-  }, [processedSequence, position, filtros, columnMap, history, nextExpected, isLoading]);
+  }, [processedSequence, position, filtros, columnMap, history, nextExpected, isLoading, persistFolderProgress]);
+
+  // ---------- Exporta o Excel automaticamente ao finalizar a conferência ----------
+  useEffect(() => {
+    if (
+      processedSequence.length > 0 &&
+      position >= processedSequence.length &&
+      !finishedExportedRef.current
+    ) {
+      finishedExportedRef.current = true;
+      try {
+        const name = downloadConferenciaProgressWorkbook({
+          originalRows: rows,
+          sequence: processedSequence,
+          columnMap,
+          position,
+          historyRecords: history,
+          filterCtx: getFilterContext(filtros)
+        });
+        showExcelMsg(`Conferência finalizada! Progresso salvo em Excel: ${name}`);
+      } catch (error) {
+        console.error(error);
+      }
+    }
+  }, [position, processedSequence, rows, columnMap, history, filtros, showExcelMsg]);
 
   // ---------- Reset conferência ----------
   const resetConferencia = useCallback(() => {
@@ -367,6 +492,7 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
     setPosition(0);
     setFeedback(null);
     setLastBip("");
+    finishedExportedRef.current = false;
     // volta aos filtros: começa uma nova conferência do zero
     setFiltros({ local: "", tipoPlantio: "", plantador: "TODOS", quadra: "", row: "TODOS" });
     // limpa histórico de conferência (mantém o carregado da storage? spec diz só resetar posição)
@@ -592,6 +718,22 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
           </button>
           <button
             className="conf-btn"
+            onClick={handleExportExcel}
+            disabled={processedSequence.length === 0}
+            title="Gera um Excel com as abas originais da planilha + aba CONFERENCIA STATUS (conferido / aguardando / pendente)"
+          >
+            <Icon name="download" size={16} /> EXPORTAR PROGRESSO (EXCEL)
+          </button>
+          <button
+            className={`conf-btn${autoSaveActive ? " conf-btn-primary" : ""}`}
+            onClick={toggleAutoSave}
+            title="Escolhe uma pasta e atualiza Progresso_Conferencia.xlsx a cada bipagem"
+          >
+            <Icon name={autoSaveActive ? "check" : "download"} size={16} />
+            {autoSaveActive ? " AUTO-SALVAR: ATIVO" : " AUTO-SALVAR EM PASTA"}
+          </button>
+          <button
+            className="conf-btn"
             onClick={resetConferencia}
             disabled={history.length === 0 && processedSequence.length === 0}
           >
@@ -605,6 +747,7 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
                   setHistory([]);
                   setPosition(0);
                   setFeedback(null);
+                  finishedExportedRef.current = false;
                   conferenciaService.clearConferencia();
                 }
               }}
@@ -613,6 +756,13 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
             </button>
           )}
         </div>
+
+        {/* Mensagem de exportação Excel */}
+        {excelMsg && (
+          <div style={{ margin: "10px 22px 0 22px", padding: "10px 14px", borderRadius: 8, background: "var(--accent-bg, rgba(34,197,94,.1))", border: "1px solid var(--border)", fontSize: 13 }}>
+            {excelMsg}
+          </div>
+        )}
 
         {/* Progresso */}
         <div className="conf-progress">
