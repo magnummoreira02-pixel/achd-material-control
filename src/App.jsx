@@ -16,7 +16,9 @@ import ConsultaEstoque from './components/ConsultaEstoque.jsx';
 import QRScanner from './components/QRScanner.jsx';
 import DeleteBoxModal from './components/DeleteBoxModal.jsx';
 import Backup from './components/Backup.jsx';
+import ConferenciaEnsaio from './components/ConferenciaEnsaio.jsx';
 import Icon from './components/ui/Icon.jsx';
+import "./styles/conferencia.css";
 
 // Import services
 import * as storageService from './services/storageService.js';
@@ -155,7 +157,8 @@ const MENU_ITEMS = [
   { id: "importar", label: "Importar Planilha", icon: "upload" },
   { id: "colunas", label: "Configurar Colunas", icon: "columns" },
   { id: "historico", label: "Histórico + Movimentações", icon: "history" },
-  { id: "estoque", label: "Consulta de Estoque", icon: "inventory" }
+  { id: "estoque", label: "Consulta de Estoque", icon: "inventory" },
+  { id: "conferencia", label: "Conferência de Ensaio", icon: "check" }
 ];
 
 const App = () => {
@@ -1063,6 +1066,16 @@ const App = () => {
           inventoryQuery={inventoryQuery}
           onInventoryQueryChange={setInventoryQuery}
           filteredInventory={filteredInventory}
+        />
+      )}
+
+      {/* MÓDULO: Conferência de Ensaio */}
+      {activeSection === "conferencia" && (
+        <ConferenciaEnsaio
+          rows={rows}
+          headers={headers}
+          idColumn={idColumn}
+          displayColumns={displayColumns}
         />
       )}
       </div>

@@ -1,0 +1,486 @@
+/* Estilos exclusivos do módulo de Conferência de Ensaio.
+   Utiliza as variáveis de tema do projeto (--accent, --danger, --surface, etc.)
+   Não altera nenhum estilo existente do app. */
+
+.conf-shell {
+  max-width: 1200px;
+  margin: 0 auto 24px;
+  padding: 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.conf-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.conf-card-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.conf-card-header h2 {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+}
+
+.conf-card-header p {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 2px 0 0 0;
+}
+
+.conf-step-badge {
+  width: 28px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.conf-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  padding: 20px 22px;
+}
+
+.conf-filter-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.conf-filter-item label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.conf-filter-item select,
+.conf-filter-item input {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.conf-filter-item select:focus,
+.conf-filter-item input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.conf-filter-item select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.conf-status-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  padding: 20px 22px;
+}
+
+@media (max-width: 768px) {
+  .conf-status-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.conf-status-card {
+  padding: 18px 20px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+}
+
+.conf-status-card h3 {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 12px 0;
+}
+
+.conf-status-card .conf-status-value {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 15px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.conf-input-area {
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.conf-input-area label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.conf-input-area input {
+  padding: 16px 20px;
+  font-size: 18px;
+  border: 2px solid var(--accent);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font-family: "IBM Plex Mono", monospace;
+  font-weight: 600;
+}
+
+.conf-input-area input:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2);
+}
+
+.conf-input-area input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.conf-action-bar {
+  display: flex;
+  gap: 10px;
+  padding: 0 22px 20px 22px;
+  flex-wrap: wrap;
+}
+
+.conf-btn {
+  padding: 10px 20px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.conf-btn:hover:not(:disabled) {
+  background: var(--surface);
+  border-color: var(--accent);
+}
+
+.conf-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.conf-btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.conf-btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover, var(--accent));
+  filter: brightness(1.1);
+}
+
+.conf-btn-danger {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);
+}
+
+.conf-feedback {
+  padding: 16px 20px;
+  border-radius: 12px;
+  margin: 0 22px 20px 22px;
+  font-weight: 700;
+  font-size: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.conf-feedback-success {
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  color: var(--accent);
+}
+
+.conf-feedback-error {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: var(--danger);
+}
+
+.conf-feedback-info {
+  background: rgba(96, 165, 250, 0.12);
+  border: 1px solid rgba(96, 165, 250, 0.4);
+  color: var(--accent-blue, #60A5FA);
+}
+
+.conf-feedback-title {
+  font-size: 16px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.conf-feedback-details {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.conf-progress {
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.conf-progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.conf-progress-header strong {
+  color: var(--text);
+  font-size: 18px;
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.conf-progress-bar {
+  width: 100%;
+  height: 10px;
+  background: var(--surface-soft);
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.conf-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.conf-progress-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.conf-stat {
+  padding: 10px 14px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+}
+
+.conf-stat-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.conf-stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.conf-stat-success .conf-stat-value { color: var(--accent); }
+.conf-stat-error .conf-stat-value { color: var(--danger); }
+.conf-stat-pending .conf-stat-value { color: var(--muted); }
+
+.conf-table-wrapper {
+  padding: 0 22px 22px 22px;
+  overflow-x: auto;
+}
+
+.conf-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.conf-table th {
+  padding: 10px 12px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--surface-soft);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+}
+
+.conf-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.conf-table tr.conf-row-current {
+  background: rgba(34, 197, 94, 0.15);
+  font-weight: 700;
+}
+
+.conf-table tr.conf-row-current td {
+  color: var(--accent);
+}
+
+.conf-table tr.conf-row-done td {
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+.conf-table tr.conf-row-error td {
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.conf-status-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-family: inherit;
+}
+
+.conf-status-badge-done {
+  background: var(--accent);
+  color: #fff;
+}
+
+.conf-status-badge-pending {
+  background: var(--surface-soft);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+.conf-status-badge-waiting {
+  background: var(--accent);
+  color: #fff;
+  animation: conf-pulse 1.2s ease-in-out infinite;
+}
+
+.conf-status-badge-error {
+  background: var(--danger);
+  color: #fff;
+}
+
+@keyframes conf-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.conf-empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.conf-final-screen {
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.conf-final-screen .conf-final-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+
+.conf-final-screen h2 {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--accent);
+  margin: 0 0 8px 0;
+}
+
+.conf-final-screen p {
+  font-size: 14px;
+  color: var(--muted);
+  margin: 4px 0;
+}
+
+.conf-final-stats {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+}
+
+.conf-final-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.conf-final-stat .conf-stat-value {
+  font-size: 24px;
+}
+
+.conf-warning-box {
+  margin: 0 22px 20px 22px;
+  padding: 14px 18px;
+  border-radius: 10px;
+  background: rgba(234, 179, 8, 0.12);
+  border: 1px solid rgba(234, 179, 8, 0.4);
+  color: var(--accent-yellow, #EAB308);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.conf-warning-box strong {
+  display: block;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
