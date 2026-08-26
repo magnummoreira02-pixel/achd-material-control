@@ -7,7 +7,7 @@ import { guessIdColumn } from "../utils/validation.js";
 const CONFERENCIA_FILTROS = [
   { key: "local", label: "Local", options: [] }, // será preenchido dinamicamente da planilha
   { key: "tipoPlantio", label: "Tipo de Plantio", options: ["8 LINHAS", "4 LINHAS", "PLANTIO MANUAL"] }, // fixo: apenas estas 3 opções
-  { key: "plantador", label: "Plantador", options: [] }, // valores A/B vêm da planilha (coluna plantador/planter/responsável)
+  { key: "plantador", label: "Plantador", options: ["TODOS"] }, // A/B vêm da planilha (coluna plantador/planter/responsável)
   { key: "quadra", label: "Quadra", options: [] }, // será preenchido dinamicamente
   { key: "row", label: "ROW", options: ["TODOS"] } // será preenchido dinamicamente
 ];
@@ -17,7 +17,7 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
   const [filtros, setFiltros] = useState({
     local: "",
     tipoPlantio: "",
-    plantador: "",
+    plantador: "TODOS",
     quadra: "",
     row: "TODOS"
   });
@@ -54,7 +54,9 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
       "plantador", "planter", "responsavel", "responsável", "operador", "colaborador", "produtor"
     ]);
     if (plantadorCol) {
-      map.plantador = distinctVals(plantadorCol).sort();
+      // TODOS + A/B (ou nomes) da planilha:
+      // clicando em "A" o beep fica só nas linhas A; em "B", só nas B; em "TODOS", todas.
+      map.plantador = ["TODOS", ...distinctVals(plantadorCol).sort()];
     }
     // quadra
     const quadraCol = colFor("quadra", ["quadra", "bloco"]);
@@ -366,7 +368,7 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
     setFeedback(null);
     setLastBip("");
     // volta aos filtros: começa uma nova conferência do zero
-    setFiltros({ local: "", tipoPlantio: "", plantador: "", quadra: "", row: "TODOS" });
+    setFiltros({ local: "", tipoPlantio: "", plantador: "TODOS", quadra: "", row: "TODOS" });
     // limpa histórico de conferência (mantém o carregado da storage? spec diz só resetar posição)
     // Porém histórico é separado do histórico de estoque. Mantemos o array em memória, limpo storage.
     setHistory([]);
