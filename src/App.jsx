@@ -182,6 +182,12 @@ const App = () => {
   const [dragOver, setDragOver] = useState(false);
   const [parseError, setParseError] = useState("");
   const [isParsing, setIsParsing] = useState(false);
+  const [isReadingWorkbook, setIsReadingWorkbook] = useState(false);
+  const [isLoadingSheet, setIsLoadingSheet] = useState(false);
+  const [availableSheets, setAvailableSheets] = useState([]);
+  const [selectedSheet, setSelectedSheet] = useState("");
+  const [pendingFileName, setPendingFileName] = useState("");
+  const [pendingBuffer, setPendingBuffer] = useState(null);
   const [theme, setTheme] = useState(() => storageService.loadTheme());
   const [history, setHistory] = useState(() => storageService.loadHistory());
   const [showFullHistory, setShowFullHistory] = useState(false);
@@ -414,17 +420,68 @@ const App = () => {
     );
   }, [inventoryRecords, inventoryQuery]);
 
-  // File processing functions
-  const processFile = useCallback((file) => {
-    if (!file) {
-      return;
-    }
+  const finalizeLoadedData = useCallback((hdrs, allRows, sheetName, fileLabel) => {
+    const sheetsInfo = [{ name: sheetName, count: allRows.length }];
+    setSheets(sheetsInfo);
+    setSelectedSheets([sheetName]);
+    setHeaders(hdrs);
+    setRows(allRows);
+    setFileName(fileLabel);
+    const guessed = guessIdColumn(hdrs);
+    setIdColumn(guessed);
+    setDisplayColumns(hdrs.filter((h) => h !== guessed));
+    setQuery("");
+    setMatched(null);
+    setSearchState("idle");
+  }, []);
+
+  const loadSheet = useCallback(async (buffer, sheetName, fileLabel) => {
+    setIsLoadingSheet(true);
     setParseError("");
-    setIsParsing(true);
-    excelService.readSpreadsheetFile(file)
-      .then(({ sheets: parsedSheets, headers: hdrs, rows: allRows }) => {
+    try {
+      if (typeof Worker !== "undefined") {
+        const workerResult = await new Promise((resolve, reject) => {
+          let worker;
+          try { worker = new Worker(new URL("./services/excelWorker.js", import.meta.url), { type: "module" }); } catch (e) { reject(e); return; }
+          const to = setTimeout(() => { try { worker.terminate(); } catch {} reject(new Error("worker-timeout")); }, 15000);
+          worker.onmessage = (event) => { clearTimeout(to); worker.terminate(); const d = event.data || {}; if (d.error) reject(new Error(d.error)); else resolve(d); };
+          worker.onerror = () => { clearTimeout(to); worker.terminate(); reject(new Error("worker-failed")); };
+          worker.postMessage({ buffer: buffer.slice(0), sheetName }, [buffer.slice(0)]);
+        });
+        finalizeLoadedData(workerResult.headers, workerResult.rows, workerResult.sheetName, fileLabel);
+      } else {
+        const { headers: hdrs, rows: allRows } = excelService.readSheetFromBuffer(buffer, sheetName);
+        finalizeLoadedData(hdrs, allRows, sheetName, fileLabel);
+      }
+    } catch (err) {
+      try {
+        const { headers: hdrs, rows: allRows } = excelService.readSheetFromBuffer(buffer, sheetName);
+        finalizeLoadedData(hdrs, allRows, sheetName, fileLabel);
+      } catch (fallbackErr) {
+        console.error(fallbackErr);
+        setParseError(fallbackErr?.message || "Não foi possível carregar a aba selecionada.");
+      }
+    } finally {
+      setIsLoadingSheet(false);
+    }
+  }, [finalizeLoadedData]);
+
+  const processFile = useCallback(async (file) => {
+    if (!file) return;
+    setAvailableSheets([]);
+    setSelectedSheet("");
+    setPendingBuffer(null);
+    setPendingFileName("");
+    setParseError("");
+    const lowerName = file.name.toLowerCase();
+    const isCsv = lowerName.endsWith(".csv");
+    const isExcel = lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls") || lowerName.endsWith(".xlsb");
+    if (isCsv || !isExcel) {
+      setIsParsing(true);
+      try {
+        const { sheets: parsedSheets, headers: hdrs, rows: allRows } = await excelService.readSpreadsheetFile(file);
         setSheets(parsedSheets);
-        setSelectedSheets(parsedSheets.map((sheet) => sheet.name));
+        setSelectedSheets(parsedSheets.map((s) => s.name));
         setHeaders(hdrs);
         setRows(allRows);
         setFileName(file.name);
@@ -434,13 +491,53 @@ const App = () => {
         setQuery("");
         setMatched(null);
         setSearchState("idle");
-      })
-      .catch((err) => {
+      } catch (err) {
         console.error(err);
         setParseError(err?.message || "Não foi possível ler este arquivo. Confirme se é um .xlsx, .xls ou .csv válido.");
-      })
-      .finally(() => setIsParsing(false));
-  }, []);
+      } finally { setIsParsing(false); }
+      return;
+    }
+    setIsReadingWorkbook(true);
+    try {
+      const buffer = await file.arrayBuffer();
+      setPendingBuffer(buffer);
+      setPendingFileName(file.name);
+      let sheetsInfo = null;
+      if (typeof Worker !== "undefined") {
+        try {
+          sheetsInfo = await new Promise((resolve, reject) => {
+            let worker;
+            try { worker = new Worker(new URL("./services/excelWorker.js", import.meta.url), { type: "module" }); } catch (e) { reject(e); return; }
+            const to = setTimeout(() => { try { worker.terminate(); } catch {} reject(new Error("worker-timeout")); }, 15000);
+            worker.onmessage = (event) => { clearTimeout(to); worker.terminate(); const d = event.data || {}; if (d.error) reject(new Error(d.error)); else resolve(d.sheets || []); };
+            worker.onerror = () => { clearTimeout(to); worker.terminate(); reject(new Error("worker-failed")); };
+            worker.postMessage({ buffer: buffer.slice(0) }, [buffer.slice(0)]);
+          });
+        } catch { sheetsInfo = excelService.getAvailableSheetsFromBuffer(buffer); }
+      } else {
+        sheetsInfo = excelService.getAvailableSheetsFromBuffer(buffer);
+      }
+      if (!sheetsInfo || !sheetsInfo.length) throw new Error("Nenhuma aba foi encontrada neste arquivo.");
+      setAvailableSheets(sheetsInfo);
+      if (sheetsInfo.length === 1) {
+        const only = sheetsInfo[0].name;
+        setSelectedSheet(only);
+        await loadSheet(buffer, only, file.name);
+      }
+    } catch (err) {
+      console.error(err);
+      setParseError(err?.message || "Não foi possível ler o arquivo.");
+      setAvailableSheets([]);
+      setPendingBuffer(null);
+      setPendingFileName("");
+    } finally { setIsReadingWorkbook(false); }
+  }, [loadSheet]);
+
+  const handleSheetConfirm = useCallback(async () => {
+    if (!pendingBuffer || !selectedSheet) { setParseError("Selecione uma aba para continuar."); return; }
+    if (!availableSheets.some((s) => s.name === selectedSheet)) { setParseError("Aba selecionada inválida."); return; }
+    await loadSheet(pendingBuffer, selectedSheet, pendingFileName);
+  }, [pendingBuffer, selectedSheet, pendingFileName, availableSheets, loadSheet]);
 
   const handleFileInput = (e) => {
     const file = e.target.files && e.target.files[0];
@@ -470,9 +567,13 @@ const App = () => {
     setMatched(null);
     setSearchState("idle");
     setParseError("");
-    if (inputRef.current) {
-      inputRef.current.value = "";
-    }
+    setAvailableSheets([]);
+    setSelectedSheet("");
+    setPendingBuffer(null);
+    setPendingFileName("");
+    setIsReadingWorkbook(false);
+    setIsLoadingSheet(false);
+    if (inputRef.current) { inputRef.current.value = ""; }
   };
 
   const suggestions = useMemo(() => {
@@ -928,25 +1029,29 @@ const App = () => {
             {/* Step 1: Import Spreadsheet */}
             {activeSection === "importar" && (
               <ImportadorPlanilha
-        hasData={hasData}
-        fileName={fileName}
-        rowCount={rows.length}
-        columnCount={headers.length}
-        dragOver={dragOver}
-        parseError={parseError}
-        isParsing={isParsing}
-        inputRef={inputRef}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragOver(true);
-        }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={handleDrop}
-        onOpenPicker={() => inputRef.current?.click()}
-        onFileInputChange={handleFileInput}
-        onReset={resetAll}
-      />
-      )}
+                hasData={hasData}
+                fileName={fileName}
+                rowCount={rows.length}
+                columnCount={headers.length}
+                dragOver={dragOver}
+                parseError={parseError}
+                isParsing={isParsing}
+                isReadingWorkbook={isReadingWorkbook}
+                isLoadingSheet={isLoadingSheet}
+                availableSheets={availableSheets}
+                selectedSheet={selectedSheet}
+                pendingFileName={pendingFileName}
+                onSelectSheet={setSelectedSheet}
+                onConfirmSheet={handleSheetConfirm}
+                inputRef={inputRef}
+                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={handleDrop}
+                onOpenPicker={() => inputRef.current?.click()}
+                onFileInputChange={handleFileInput}
+                onReset={resetAll}
+              />
+            )}
 
       {/* Step 2: Configure Columns */}
       {activeSection === "colunas" && (
@@ -1069,7 +1174,7 @@ const App = () => {
         />
       )}
 
-{/* MÓDULO: Conferência de Ensaio */}
+      {/* MÓDULO: Conferência de Ensaio */}
       {activeSection === "conferencia" && (
         <ConferenciaEnsaio
           rows={rows}
@@ -1079,16 +1184,7 @@ const App = () => {
         />
       )}
 
-{activeSection === "conferencia" && (
-        <ConferenciaEnsaio
-          rows={rows}
-          headers={headers}
-          idColumn={idColumn}
-          displayColumns={displayColumns}
-        />
-      )}
-
-      {/* exportMessage && (
+      {exportMessage && (
         <div
           style={{
             maxWidth: 1200,
@@ -1105,23 +1201,24 @@ const App = () => {
           {exportMessage}
         </div>
       )}
+          </div>
+        </main>
 
-      {/* Scanner Modal */}
-    <QRScanner
-      open={scannerOpen}
-      status={scannerStatus}
-      videoRef={scannerVideoRef}
-      onClose={() => setScannerOpen(false)}
-    />
+        <QRScanner
+          open={scannerOpen}
+          status={scannerStatus}
+          videoRef={scannerVideoRef}
+          onClose={() => setScannerOpen(false)}
+        />
 
-    {/* Delete Box Modal */}
-    <DeleteBoxModal
-      candidate={deleteBoxCandidate}
-      onCancel={() => setDeleteBoxCandidate(null)}
-      onConfirm={confirmDeleteBox}
-    />
-  </div>
-</div>
-}
+        <DeleteBoxModal
+          candidate={deleteBoxCandidate}
+          onCancel={() => setDeleteBoxCandidate(null)}
+          onConfirm={confirmDeleteBox}
+        />
+      </div>
+    </div>
+  );
+};
 
 export default App;

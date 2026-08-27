@@ -2,6 +2,37 @@ import * as XLSX from "xlsx";
 import { normalizeValue } from "../utils/validation.js";
 import { getExportFileName } from "../utils/formatting.js";
 
+export function getSheetNamesFromBuffer(buffer) {
+  const workbook = XLSX.read(new Uint8Array(buffer), { type: "array" });
+  return [...workbook.SheetNames];
+}
+
+export function readSheetFromBuffer(buffer, sheetName) {
+  const workbook = XLSX.read(new Uint8Array(buffer), { type: "array" });
+  if (!workbook.SheetNames.includes(sheetName)) {
+    throw new Error(`Aba "${sheetName}" não encontrada no arquivo.`);
+  }
+  const sheet = workbook.Sheets[sheetName];
+  if (!sheet) throw new Error("Não foi possível ler a aba selecionada.");
+  const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+  if (!json.length) throw new Error("A aba selecionada não contém dados legíveis.");
+  const rows = json.map((record) => ({ ...record, __sheetName: sheetName }));
+  const headers = Object.keys(rows[0]).filter((h) => h !== "__sheetName");
+  return { headers, rows, sheetName, count: rows.length };
+}
+
+export function getAvailableSheetsFromBuffer(buffer) {
+  const workbook = XLSX.read(new Uint8Array(buffer), { type: "array" });
+  const sheets = [];
+  workbook.SheetNames.forEach((name) => {
+    const sheet = workbook.Sheets[name];
+    if (!sheet) return;
+    const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+    if (json.length) sheets.push({ name, count: json.length });
+  });
+  return sheets;
+}
+
 // Parse síncrono (fallback quando Web Worker não está disponível)
 function parseSpreadsheetBuffer(buffer) {
   const workbook = XLSX.read(new Uint8Array(buffer), { type: "array" });

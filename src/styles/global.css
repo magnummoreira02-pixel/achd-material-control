@@ -577,3 +577,39 @@ body {
 @media (min-width: 1200px) {
   .desktop-main-grid { grid-template-columns: minmax(0, 1fr) minmax(390px, .85fr); }
 }
+
+/* BOX LABEL PRINT - isolado */
+#box-label-print-root { display: none; }
+@media print {
+  @page { margin: 0; }
+  body.printing-box-label * { visibility: hidden !important; }
+  body.printing-box-label #box-label-print-root,
+  body.printing-box-label #box-label-print-root * { visibility: visible !important; }
+  #box-label-print-root {
+    display: block !important;
+    position: static !important;
+  }
+  #box-label-print-root .label {
+    border: 1px solid #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    page-break-inside: avoid;
+    page-break-after: always;
+    box-sizing: border-box;
+    background: #fff;
+    color: #000;
+  }
+  #box-label-print-root .label:last-child { page-break-after: auto; }
+  #box-label-print-root .label-45x18 { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 2mm; font-family: monospace; font-weight: 800; font-size: 3mm; }
+  #box-label-print-root .label-45x18 .qr { width: 14mm; height: 14mm; }
+  #box-label-print-root .label-50x50 { display: flex; flex-direction: column; align-items: center; gap: 1mm; text-align: center; }
+  #box-label-print-root .label-50x50 .box-code { font-family: monospace; font-weight: 800; font-size: 4mm; }
+  #box-label-print-root .label-50x50 .qr { width: 22mm; height: 22mm; }
+  #box-label-print-root .label-50x50 .box-meta { font-size: 2.2mm; color: #334155; }
+  #box-label-print-root .label-100x100 { display: flex; flex-direction: column; align-items: center; gap: 1.5mm; text-align: center; padding: 2mm; }
+  #box-label-print-root .label-100x100 .box-code { font-family: monospace; font-weight: 800; font-size: 6mm; }
+  #box-label-print-root .label-100x100 .qr { width: 38mm; height: 38mm; }
+  #box-label-print-root .label-100x100 .box-meta { font-size: 3mm; }
+  #box-label-print-root .label-100x100 .box-extra { font-size: 2.5mm; color: #475569; }
+}

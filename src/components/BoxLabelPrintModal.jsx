@@ -1,0 +1,203 @@
+import { useEffect, useState } from "react";
+import { LABEL_SIZES, LABEL_SIZE_IDS, DEFAULT_LABEL_SIZE_ID } from "../utils/labelSizes.js";
+import { getBoxLabelPayload, generateQrDataUrl } from "../services/boxLabelService.js";
+import { ZEBRA_PRINTERS, PRINTER_TYPES, DEFAULT_PRINTER_CONFIG, resolvePrinterConfig } from "../utils/printerConfig.js";
+import { generateZplLabel } from "../services/zplGenerator.js";
+import { commonPrint, thermalPrintZpl, sendToPrinterService } from "../services/printerAdapters.js";
+
+export default function BoxLabelPrintModal({ open, box, onClose }) {
+  const [sizeId, setSizeId] = useState(DEFAULT_LABEL_SIZE_ID);
+  const [qty, setQty] = useState(1);
+  const [qrDataUrl, setQrDataUrl] = useState("");
+  const [printerType, setPrinterType] = useState(DEFAULT_PRINTER_CONFIG.type);
+  const [zebraModel, setZebraModel] = useState(DEFAULT_PRINTER_CONFIG.model);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [dpi, setDpi] = useState(DEFAULT_PRINTER_CONFIG.dpi);
+  const [ip, setIp] = useState("");
+  const [port, setPort] = useState(9100);
+  const [zplPreview, setZplPreview] = useState("");
+  const [statusMsg, setStatusMsg] = useState("");
+  const [statusError, setStatusError] = useState(false);
+
+  const payload = box ? getBoxLabelPayload(box) : null;
+  const labelSize = LABEL_SIZES[sizeId] || LABEL_SIZES[DEFAULT_LABEL_SIZE_ID];
+  const printerConfig = resolvePrinterConfig({ type: printerType, model: zebraModel, dpi: Number(dpi) || 203, ip, port: Number(port) || 9100, manufacturer: "Zebra", language: "ZPL" });
+
+  useEffect(() => {
+    if (!open || !payload) return;
+    let cancelled = false;
+    const qrSize = sizeId === "100x100" ? 220 : sizeId === "50x50" ? 160 : 110;
+    generateQrDataUrl(payload.qrValue, qrSize).then((url) => {
+      if (!cancelled) setQrDataUrl(url);
+    });
+    return () => { cancelled = true; };
+  }, [open, payload?.qrValue, sizeId]);
+
+  useEffect(() => {
+    if (showAdvanced && printerType === PRINTER_TYPES.THERMAL && payload) {
+      try { setZplPreview(generateZplLabel({ payload, labelSize, printerConfig })); } catch { setZplPreview(""); }
+    } else { setZplPreview(""); }
+  }, [showAdvanced, printerType, payload, labelSize, printerConfig]);
+
+  useEffect(() => {
+    if (!open) {
+      setQty(1); setSizeId(DEFAULT_LABEL_SIZE_ID); setStatusMsg(""); setStatusError(false); setZplPreview("");
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (printerType === PRINTER_TYPES.THERMAL) {
+      const preset = ZEBRA_PRINTERS[zebraModel];
+      if (preset) setDpi(preset.dpi);
+    }
+  }, [zebraModel, printerType]);
+
+  if (!open || !payload) return null;
+
+  const handlePrint = async () => {
+    setStatusMsg(""); setStatusError(false);
+    try {
+      if (printerType === PRINTER_TYPES.COMMON) {
+        const r = await commonPrint({ payload, labelSize, quantity: qty, qrDataUrl });
+        setStatusMsg(r.message); setStatusError(false);
+      } else {
+        const { zpl } = thermalPrintZpl({ payload, labelSize, printerConfig });
+        // Se IP/serviço configurado tenta enviar, senão apenas informa ZPL gerado
+        if (ip.trim()) {
+          try {
+            const r = await sendToPrinterService({ zpl, printerConfig });
+            setStatusMsg(r.message);
+          } catch (e) {
+            setStatusMsg(e.message + " — ZPL disponível abaixo."); setStatusError(true);
+            setZplPreview(zpl); setShowAdvanced(true);
+          }
+        } else {
+          // Sem IP: gera ZPL e tenta serviço local; se falhar mostra ZPL
+          try {
+            const r = await sendToPrinterService({ zpl, printerConfig });
+            setStatusMsg(r.message);
+          } catch (e) {
+            setStatusMsg("ZPL gerado com sucesso. Copie e envie via BarTender/driver."); setStatusError(false);
+            setZplPreview(zpl); setShowAdvanced(true);
+          }
+        }
+      }
+    } catch (e) {
+      setStatusMsg(e.message || "Não foi possível enviar a etiqueta para a impressora."); setStatusError(true);
+    }
+  };
+
+  const qtyNum = Math.max(1, Math.min(99, Number(qty) || 1));
+
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.55)", display: "grid", placeItems: "center", padding: 16 }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ width: "100%", maxWidth: 480, background: "var(--surface, #fff)", border: "1px solid var(--border, #e2e8f0)", borderRadius: 16, overflow: "hidden" }}
+      >
+        <header style={{ padding: "16px 20px", borderBottom: "1px solid var(--border, #e2e8f0)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h3 style={{ fontSize: 15, fontWeight: 800, color: "var(--text, #111827)", margin: 0 }}>Preparar etiqueta</h3>
+          <button type="button" onClick={onClose} style={{ background: "transparent", border: "none", fontSize: 20, cursor: "pointer", color: "var(--muted, #64748b)" }}>×</button>
+        </header>
+
+        <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ fontSize: 13, color: "var(--muted, #64748b)" }}>Caixa: <strong style={{ color: "var(--text, #111827)" }}>CAIXA {payload.number}</strong> · {payload.count} itens{payload.description ? ` · ${payload.description}` : ""}</div>
+
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 700, color: "var(--muted, #64748b)", textTransform: "uppercase", letterSpacing: "0.04em" }}>Tamanho da etiqueta</label>
+            <select value={sizeId} onChange={(e) => setSizeId(e.target.value)} style={{ marginTop: 6, width: "100%", padding: "10px 12px", border: "1px solid var(--border-strong, #cbd5e1)", borderRadius: 8, background: "var(--surface-soft, #f8fafc)", color: "var(--text, #111827)" }}>
+              {LABEL_SIZE_IDS.map((id) => (
+                <option key={id} value={id}>{LABEL_SIZES[id].label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 700, color: "var(--muted, #64748b)", textTransform: "uppercase", letterSpacing: "0.04em" }}>Quantidade</label>
+            <input type="number" min={1} max={99} value={qty} onChange={(e) => setQty(Math.max(1, Math.min(99, Number(e.target.value) || 1)))} style={{ marginTop: 6, width: 100, padding: "10px 12px", border: "1px solid var(--border-strong, #cbd5e1)", borderRadius: 8 }} />
+          </div>
+
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 700, color: "var(--muted, #64748b)", textTransform: "uppercase", letterSpacing: "0.04em" }}>Impressora</label>
+            <select value={printerType} onChange={(e) => setPrinterType(e.target.value)} style={{ marginTop: 6, width: "100%", padding: "10px 12px", border: "1px solid var(--border-strong, #cbd5e1)", borderRadius: 8, background: "var(--surface-soft, #f8fafc)" }}>
+              <option value={PRINTER_TYPES.COMMON}>Impressora comum (laser/jato/PDF)</option>
+              <option value={PRINTER_TYPES.THERMAL}>Impressora térmica (Zebra ZPL)</option>
+            </select>
+          </div>
+
+          {printerType === PRINTER_TYPES.THERMAL && (
+            <div style={{ padding: 12, background: "var(--surface-soft, #f1f5f9)", borderRadius: 8, border: "1px solid var(--border, #e2e8f0)", display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)" }}>Fabricante</label>
+                  <select value="Zebra" disabled style={{ marginTop: 4, width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)" }}><option>Zebra</option></select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)" }}>Modelo</label>
+                  <select value={zebraModel} onChange={(e) => setZebraModel(e.target.value)} style={{ marginTop: 4, width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)" }}>
+                    {Object.keys(ZEBRA_PRINTERS).map((m) => <option key={m} value={m}>{m} ({ZEBRA_PRINTERS[m].dpi}dpi)</option>)}
+                  </select>
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: "var(--muted)" }}>Linguagem: ZPL · DPI: {printerConfig.dpi} · Conexão: USB/Rede/Serviço local</div>
+              <button type="button" onClick={() => setShowAdvanced(!showAdvanced)} style={{ fontSize: 12, background: "transparent", border: "none", color: "#22C55E", cursor: "pointer", textAlign: "left", padding: 0 }}>⚙ {showAdvanced ? "Ocultar" : "Configuração avançada"}</button>
+              {showAdvanced && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <div><label style={{ fontSize: 11, fontWeight: 700 }}>DPI</label><input type="number" value={dpi} onChange={(e) => setDpi(e.target.value)} style={{ marginTop: 4, width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)" }} /></div>
+                    <div><label style={{ fontSize: 11, fontWeight: 700 }}>Porta</label><input type="number" value={port} onChange={(e) => setPort(e.target.value)} style={{ marginTop: 4, width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)" }} /></div>
+                  </div>
+                  <div><label style={{ fontSize: 11, fontWeight: 700 }}>IP (opcional — rede)</label><input value={ip} onChange={(e) => setIp(e.target.value)} placeholder="192.168.0.10" style={{ marginTop: 4, width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)" }} /></div>
+                  {zplPreview && (
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 4 }}>ZPL gerado — BarTender/driver</div>
+                      <textarea readOnly value={zplPreview} style={{ width: "100%", minHeight: 100, fontFamily: "monospace", fontSize: 10, padding: 8, borderRadius: 8, border: "1px solid var(--border-strong)" }} />
+                      <button type="button" onClick={() => { navigator.clipboard?.writeText(zplPreview); setStatusMsg("ZPL copiado."); }} style={{ marginTop: 6, padding: "6px 12px", background: "#334155", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 12 }}>Copiar ZPL</button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted, #64748b)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 8, textAlign: "center" }}>Pré-visualização</div>
+            <div style={{ display: "grid", placeItems: "center", padding: 16, background: "var(--surface-soft, #f1f5f9)", borderRadius: 12, border: "1px dashed var(--border, #e2e8f0)" }}>
+              <div style={{ width: `${labelSize.width}mm`, height: `${labelSize.height}mm`, maxWidth: "100%", background: "#fff", border: "1px solid #0f172a", borderRadius: 4, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 4, overflow: "hidden", boxSizing: "border-box" }}>
+                {sizeId === "45x18" ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", justifyContent: "space-between", padding: "0 4px" }}>
+                    <span style={{ fontWeight: 800, fontSize: 10, fontFamily: "monospace" }}>CAIXA {payload.number}</span>
+                    {qrDataUrl ? <img src={qrDataUrl} alt="QR" style={{ width: 14 + "mm", height: 14 + "mm", objectFit: "contain" }} /> : <span style={{ fontSize: 8 }}>QR</span>}
+                  </div>
+                ) : sizeId === "50x50" ? (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                    <span style={{ fontWeight: 800, fontSize: 11, fontFamily: "monospace" }}>CAIXA {payload.number}</span>
+                    {qrDataUrl ? <img src={qrDataUrl} alt="QR" style={{ width: 22 + "mm", height: 22 + "mm", objectFit: "contain" }} /> : null}
+                    <span style={{ fontSize: 7, color: "#475569" }}>LRV</span>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+                    <span style={{ fontWeight: 800, fontSize: 14, fontFamily: "monospace" }}>CAIXA {payload.number}</span>
+                    {qrDataUrl ? <img src={qrDataUrl} alt="QR" style={{ width: 32 + "mm", height: 32 + "mm", objectFit: "contain" }} /> : null}
+                    <span style={{ fontSize: 8, color: "#475569" }}>LRV{payload.description ? " · " + payload.description : ""}</span>
+                    <span style={{ fontSize: 7, color: "#64748b" }}>{payload.count} itens{payload.createdAt ? " · " + payload.createdAt : ""}</span>
+                  </div>
+                )}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--muted, #64748b)", marginTop: 8 }}>{labelSize.label} {qtyNum > 1 ? `· ${qtyNum} cópias` : ""}</div>
+            </div>
+          </div>
+        </div>
+
+        {statusMsg && <div style={{ margin: "0 20px", padding: "10px 12px", borderRadius: 8, background: statusError ? "rgba(239,68,68,0.12)" : "rgba(34,197,94,0.12)", border: `1px solid ${statusError ? "rgba(239,68,68,0.3)" : "rgba(34,197,94,0.3)"}`, color: statusError ? "#DC2626" : "#15803D", fontSize: 12 }}>{statusMsg}</div>}
+        <footer style={{ padding: "14px 20px", borderTop: "1px solid var(--border, #e2e8f0)", display: "flex", justifyContent: "space-between", gap: 10 }}>
+          <button type="button" onClick={onClose} style={{ flex: 1, padding: "10px 16px", background: "transparent", border: "1px solid var(--border-strong, #cbd5e1)", borderRadius: 8, cursor: "pointer" }}>Cancelar</button>
+          <button type="button" onClick={handlePrint} style={{ flex: 1, padding: "10px 16px", background: "#22C55E", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 700 }}>🖨 Imprimir</button>
+        </footer>
+      </div>
+    </div>
+  );
+}

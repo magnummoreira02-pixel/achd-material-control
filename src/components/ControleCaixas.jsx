@@ -1,3 +1,6 @@
+import { useState } from "react";
+import BoxLabelPrintModal from "./BoxLabelPrintModal.jsx";
+
 export default function ControleCaixas({
   boxes = [],
   activeBoxId,
@@ -12,6 +15,7 @@ export default function ControleCaixas({
   onRequestDeleteBox,
   onExportAllClosedBoxes
 }) {
+  const [labelBox, setLabelBox] = useState(null);
   const closedBoxesCount = boxes.filter((box) => box.status === "ARMAZENADA" && (box.materials || []).length).length;
 
   return (
@@ -99,6 +103,9 @@ export default function ControleCaixas({
                   <button type="button" onClick={() => onExportBox?.(box, "xlsx")} style={{ padding: "8px 14px", background: "transparent", border: "1px solid var(--border-strong)", color: "var(--text)", cursor: "pointer", fontSize: 12 }}>
                     EXPORTAR
                   </button>
+                  <button type="button" onClick={() => setLabelBox(box)} style={{ padding: "8px 14px", background: "transparent", border: "1px solid #22C55E", color: "#22C55E", cursor: "pointer", fontSize: 12 }}>
+                    🖨 ETIQUETA
+                  </button>
                   <button type="button" onClick={() => onExportBox?.(box, "pdf")} disabled={!box.materials?.length} style={{ padding: "8px 14px", background: "transparent", border: `1px solid ${box.materials?.length ? "#60A5FA" : "var(--border-strong)"}`, color: box.materials?.length ? "#60A5FA" : "var(--muted)", cursor: box.materials?.length ? "pointer" : "not-allowed", fontSize: 12 }}>
                     IMPRIMIR
                   </button>
@@ -116,6 +123,7 @@ export default function ControleCaixas({
           })
         )}
       </div>
+      <BoxLabelPrintModal open={!!labelBox} box={labelBox} onClose={() => setLabelBox(null)} />
     </section>
   );
 }
