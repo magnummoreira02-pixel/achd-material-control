@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from "react"
 import Icon from "./ui/Icon.jsx";
 import { getConferenciaDirection, normalizeValue, findColumn, sortRecordsByIdRange, applyFilters, findPositionInSequence, calculateRollbackPosition, evaluateBip, dedupeById } from "../utils/conferenciaUtils.js";
 import * as conferenciaService from "../services/conferenciaService.js";
-import { buildConferenciaStatusRows, downloadConferenciaProgressWorkbook, writeConferenciaProgressToDirectory } from "../services/excelService.js";
+import { buildConferenciaStatusRows, buildConferenciaDailyRows, downloadConferenciaProgressWorkbook, writeConferenciaProgressToDirectory } from "../services/excelService.js";
 import { guessIdColumn } from "../utils/validation.js";
 
 const CONFERENCIA_FILTROS = [
@@ -255,6 +255,7 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
   // ---------- Exportação Excel do progresso ----------
   const autoSaveDirRef = useRef(null); // FileSystemDirectoryHandle da pasta escolhida
   const finishedExportedRef = useRef(false); // garante export único ao finalizar
+  const lastAutoSaveWarnRef = useRef(0);
   const [autoSaveActive, setAutoSaveActive] = useState(false);
   const [excelMsg, setExcelMsg] = useState("");
 
@@ -263,18 +264,36 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
     setTimeout(() => setExcelMsg(""), 6000);
   }, []);
 
+  // Garante permissão de escrita na pasta (alguns navegadores pedem de novo
+  // ao retomar a sessão; sem isso a gravação falha em silêncio).
+  const ensureReadWrite = async (dirHandle) => {
+    if (!dirHandle.queryPermission && !dirHandle.requestPermission) return true;
+    const opts = { mode: "readwrite" };
+    try {
+      if ((await dirHandle.queryPermission?.(opts)) === "granted") return true;
+      return (await dirHandle.requestPermission?.(opts)) === "granted";
+    } catch {
+      return false;
+    }
+  };
+
   // Grava o arquivo Progresso_Conferencia.xlsx na pasta escolhida
   // (chamado a cada bipagem quando o auto-salvamento está ativo).
-  const persistFolderProgress = useCallback((historySnapshot, posSnapshot) => {
+  // Salva SEMPRE o histórico completo do dia: conferidos, reconferências e erros.
+  const persistFolderProgress = useCallback(async (historySnapshot, posSnapshot) => {
     const dir = autoSaveDirRef.current;
     if (!dir || processedSequence.length === 0) return;
-    writeConferenciaProgressToDirectory(
-      dir,
-      buildConferenciaStatusRows(processedSequence, columnMap, posSnapshot, historySnapshot, getFilterContext(filtros))
-    );
-  }, [processedSequence, columnMap, filtros]);
+    const ok = await writeConferenciaProgressToDirectory(dir, {
+      statusRows: buildConferenciaStatusRows(processedSequence, columnMap, posSnapshot, historySnapshot, getFilterContext(filtros)),
+      dailyRows: buildConferenciaDailyRows(historySnapshot)
+    });
+    if (!ok && Date.now() - lastAutoSaveWarnRef.current > 30000) {
+      lastAutoSaveWarnRef.current = Date.now();
+      showExcelMsg("⚠ Falha ao gravar na pasta. Feche o Progresso_Conferencia.xlsx no Excel e verifique a pasta selecionada.");
+    }
+  }, [processedSequence, columnMap, filtros, showExcelMsg]);
 
-  // Exporta workbook completo: abas originais da planilha + aba CONFERENCIA STATUS
+  // Exporta workbook completo: abas originais da planilha + CONFERENCIA STATUS + HISTORICO DO DIA
   const handleExportExcel = useCallback(() => {
     if (!processedSequence.length) return;
     try {
@@ -286,7 +305,7 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
         historyRecords: history,
         filterCtx: getFilterContext(filtros)
       });
-      showExcelMsg(`Arquivo Excel gerado com a aba CONFERENCIA STATUS: ${name}`);
+      showExcelMsg(`Arquivo Excel gerado com as abas CONFERENCIA STATUS e HISTORICO DO DIA: ${name}`);
     } catch (error) {
       console.error(error);
       showExcelMsg("Não foi possível gerar o arquivo Excel do progresso.");
@@ -302,162 +321,151 @@ export default function ConferenciaEnsaio({ rows = [], headers = [], idColumn = 
       return;
     }
     if (typeof window === "undefined" || !window.showDirectoryPicker) {
-      showExcelMsg("Este navegador não permite salvar em pasta automaticamente. Use EXPORTAR PROGRESSO.");
+      showExcelMsg("Este navegador não permite salvar em pasta automaticamente. Use EXPORTAR PROGRESSO (Excel/Chrome ou Edge).");
       return;
     }
     try {
       const dir = await window.showDirectoryPicker({ mode: "readwrite" });
+      const granted = await ensureReadWrite(dir);
+      if (!granted) {
+        showExcelMsg("Permissão de gravação negada para esta pasta. O auto-salvar não foi ativado.");
+        return;
+      }
       autoSaveDirRef.current = dir;
       setAutoSaveActive(true);
+      let firstWriteOk = false;
       if (processedSequence.length > 0) {
-        persistFolderProgress(history, position);
+        firstWriteOk = await writeConferenciaProgressToDirectory(dir, {
+          statusRows: buildConferenciaStatusRows(processedSequence, columnMap, position, history, getFilterContext(filtros)),
+          dailyRows: buildConferenciaDailyRows(history)
+        });
       }
-      showExcelMsg(`Auto-salvamento ativo: Progresso_Conferencia.xlsx será atualizado na pasta escolhida a cada bipagem.`);
+      showExcelMsg(
+        firstWriteOk
+          ? `Auto-salvamento ATIVO. Teste gravado com sucesso em: ${dir.name}/Progresso_Conferencia.xlsx`
+          : `Pasta "${dir.name}" selecionada. O arquivo será gravado a partir da próxima bipagem.`
+      );
     } catch (error) {
       if (error?.name !== "AbortError") {
         console.error(error);
-        showExcelMsg("Não foi possível abrir a pasta selecionada.");
+        showExcelMsg(`Não foi possível usar a pasta selecionada (${error?.message || "erro desconhecido"}).`);
       }
     }
-  }, [processedSequence.length, history, position, persistFolderProgress, showExcelMsg]);
+  }, [processedSequence, columnMap, position, history, filtros, showExcelMsg]);
 
   // ---------- Funções de ação ----------
   const handleBip = useCallback((value) => {
-    if (isLoading) return;
-    if (!inputRef.current) return;
-    const biped = String(value ?? "").trim();
-    if (biped === "") return;
-    setLastBip(biped);
+    if (isLoading || !inputRef.current) return;
+    const raw = String(value ?? "").trim();
+    if (!raw) return;
 
-    // Se não há sequência (filtros não prontos)
+    const tokens = raw.split(/[\s,;\t]+/).map(t => t.trim()).filter(Boolean);
+    if (!tokens.length) return;
+
     if (processedSequence.length === 0) {
+      setLastBip("");
       setFeedback({
         status: "WARN",
         message: "Configure os filtros e carregue uma planilha válida para iniciar.",
         details: {}
       });
-      setLastBip("");
       setTimeout(() => inputRef.current?.focus(), 0);
       return;
     }
 
-    // Procura o ID na sequência inteira (para verificar existência)
-    const positionInSeq = findPositionInSequence(processedSequence, biped, columnMap.id);
-    const existsInSeq = positionInSeq !== -1;
+    let accHistory = [...history];
+    let pos = position;
+    let anySuccess = false;
+    let anyError = false;
+    let lastFeedback = null;
 
-    if (!existsInSeq) {
-      // ID não pertence aos filtros atuais
-      const expected = nextExpected;
-      const bipedRecord = rows.find(r => normalizeValue(r[columnMap.id]) === normalizeValue(biped));
-      setFeedback({
-        status: "ERROR",
-        message: "⚠ MATERIAL NÃO PERTENCE À CONFERÊNCIA ATUAL",
-        details: {
-          expected,
-          biped: bipedRecord || { [columnMap.id]: biped }
-        }
-      });
+    for (const token of tokens) {
+      setLastBip(token);
+
+      const idx = findPositionInSequence(processedSequence, token, columnMap.id);
+      if (idx === -1) {
+        // Token não está na sequência atual
+        const expected = processedSequence[pos] ?? null;
+        const rec = rows.find(r => normalizeValue(r[columnMap.id]) === normalizeValue(token));
+        const errRecord = {
+          id: Date.now() + Math.random(),
+          timestamp: new Date().toISOString(),
+          ...getFilterContext(filtros),
+          esperadoId: expected?.[columnMap.id] ?? null,
+          esperadoRange: expected?.[columnMap.range] ?? null,
+          bipadoId: token,
+          bipadoRange: rec?.[columnMap.range] ?? null,
+          status: "ERRO",
+          posicao: pos,
+          usuario: ""
+        };
+        accHistory = [errRecord, ...accHistory];
+        anyError = true;
+        lastFeedback = {
+          status: "ERROR",
+          message: `⚠ Material não pertence à conferência atual (${token})`,
+          details: { expected, biped: rec || { [columnMap.id]: token } }
+        };
+        // pos stays unchanged
+        continue;
+      }
+
+      const expected = processedSequence[pos];
+      if (!expected) {
+        lastFeedback = { status: "INFO", message: "Conferência já finalizada!", details: {} };
+        // continue processing remaining tokens without advancing pos
+        continue;
+      }
+
+      const actual = processedSequence.find(r => normalizeValue(r[columnMap.id]) === normalizeValue(token)) || {};
+      const res = evaluateBip(expected, actual, columnMap.id, columnMap.range, filtros.tipoPlantio);
+
+      const newRecord = {
+        id: Date.now() + Math.random(),
+        timestamp: new Date().toISOString(),
+        ...getFilterContext(filtros),
+        esperadoId: expected[columnMap.id],
+        esperadoRange: expected[columnMap.range],
+        bipadoId: token,
+        bipadoRange: actual?.[columnMap.range] ?? null,
+        status: res.status === "CORRECT" ? "CONFERIDO" : res.status === "ERROR" ? "ERRO" : "RECONFERÊNCIA",
+        posicao: pos,
+        usuario: ""
+      };
+      accHistory = [newRecord, ...accHistory];
+
+      if (res.status === "CORRECT") {
+        pos = Math.min(pos + 1, processedSequence.length);
+        anySuccess = true;
+        lastFeedback = {
+          status: "SUCCESS",
+          message: res.message,
+          details: res.details
+        };
+      } else {
+        pos = calculateRollbackPosition(pos, processedSequence.length);
+        anyError = true;
+        lastFeedback = {
+          status: "ERROR",
+          message: res.message,
+          details: res.details
+        };
+      }
+    }
+
+    setHistory(accHistory);
+    conferenciaService.saveConferencia(accHistory);
+    setPosition(pos);
+    setFeedback(lastFeedback);
+    if (anyError) {
       conferenciaService.playErrorBeep();
       conferenciaService.vibrateError();
-      // grava erro no histórico
-      const historyRecord = {
-        id: Date.now(),
-        timestamp: new Date().toISOString(),
-        local: filtros.local || "",
-        tipoPlantio: filtros.tipoPlantio || "",
-        plantador: filtros.plantador || "",
-        quadra: filtros.quadra || "",
-        row: filtros.row === "TODOS" ? "" : filtros.row,
-        esperadoId: expected ? expected[columnMap.id] : null,
-        esperadoRange: expected ? expected[columnMap.range] : null,
-        bipadoId: biped,
-        bipadoRange: bipedRecord ? bipedRecord[columnMap.range] : null,
-        status: "ERRO",
-        posicao: position,
-        usuario: "" // poderia pegar de algum storage de usuário
-      };
-      setHistory(prev => {
-        const updated = [historyRecord, ...prev];
-        conferenciaService.saveConferencia(updated);
-        return updated;
-      });
-      // grava progresso no Excel da pasta (se auto-salvamento ativo)
-      persistFolderProgress([historyRecord, ...history], position);
-      setLastBip("");
-      setTimeout(() => inputRef.current?.focus(), 0);
-      return;
-    }
-
-    // ID existe na sequência
-    const expected = nextExpected;
-    if (!expected) {
-      // já terminou?
-      setFeedback({
-        status: "INFO",
-        message: "Conferência já finalizada!",
-        details: {}
-      });
-      setLastBip("");
-      setTimeout(() => inputRef.current?.focus(), 0);
-      return;
-    }
-
-    const actualRecord = processedSequence.find(r => normalizeValue(r[columnMap.id]) === normalizeValue(biped));
-    const evalResult = evaluateBip(expected, actualRecord || {}, columnMap.id, columnMap.range, filtros.tipoPlantio);
-
-    // Registra no histórico sempre
-    const historyRecord = {
-      id: Date.now(),
-      timestamp: new Date().toISOString(),
-      local: filtros.local || "",
-      tipoPlantio: filtros.tipoPlantio || "",
-      plantador: filtros.plantador || "",
-      quadra: filtros.quadra || "",
-      row: filtros.row === "TODOS" ? "" : filtros.row,
-      esperadoId: expected[columnMap.id],
-      esperadoRange: expected[columnMap.range],
-      bipadoId: biped,
-      bipadoRange: actualRecord ? actualRecord[columnMap.range] : null,
-      status: evalResult.status === "CORRECT" ? "CONFERIDO" :
-               evalResult.status === "ERROR" ? "ERRO" : "RECONFERÊNCIA",
-      posicao: position,
-      usuario: ""
-    };
-    const newHistory = [historyRecord, ...history];
-    setHistory(newHistory);
-    conferenciaService.saveConferencia(newHistory);
-
-    // Atualiza feedback e position
-    let effectivePos = position;
-    if (evalResult.status === "CORRECT") {
-      // Avança para o próximo
-      effectivePos = Math.min(position + 1, processedSequence.length);
-      setPosition(effectivePos);
-      setFeedback({
-        status: "SUCCESS",
-        message: evalResult.message,
-        details: evalResult.details
-      });
+    } else if (anySuccess) {
       conferenciaService.playSuccessBeep();
       conferenciaService.vibrateSuccess();
-    } else {
-      // ERRO: volta 5 posições
-      const newPos = calculateRollbackPosition(position, processedSequence.length);
-      effectivePos = newPos;
-      setPosition(newPos);
-      setFeedback({
-        status: "ERROR",
-        message: evalResult.message,
-        details: evalResult.details
-      });
-      conferenciaService.playErrorBeep();
-      conferenciaService.vibrateError();
     }
 
-    // grava progresso no Excel da pasta (se auto-salvamento ativo)
-    persistFolderProgress(newHistory, effectivePos);
-
-    // limpa input e foca para o próximo bip
+    persistFolderProgress(accHistory, pos);
     setLastBip("");
     setTimeout(() => inputRef.current?.focus(), 0);
   }, [processedSequence, position, filtros, columnMap, history, nextExpected, isLoading, persistFolderProgress]);

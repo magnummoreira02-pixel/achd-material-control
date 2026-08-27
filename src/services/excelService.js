@@ -246,7 +246,20 @@ export function downloadBlob(blob, fileName) {
 // ---------------------------------------------------------------------------
 
 const CONF_STATUS_SHEET = "CONFERENCIA STATUS";
+const CONF_DAILY_SHEET = "HISTORICO DO DIA";
 const MIME_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+function confFmtDate(value) {
+  const d = new Date(value);
+  if (!value || isNaN(d)) return "";
+  return d.toLocaleDateString("pt-BR");
+}
+
+function confFmtTime(value) {
+  const d = new Date(value);
+  if (!value || isNaN(d)) return "";
+  return d.toLocaleTimeString("pt-BR", { hour12: false });
+}
 
 const CONF_OPTIONAL_LABELS = {
   quadra: "QUADRA",
@@ -260,38 +273,43 @@ const CONF_OPTIONAL_LABELS = {
 };
 
 /**
+ * Agrupa o histórico de bips por ID normalizado, em ordem cronológica.
+ * Considera TODOS os contextos de filtro: se o mesmo material foi bipado
+ * com plantador A e depois B (ou gerou erro), tudo aparece na linha dele.
+ */
+function groupEventsByNormalizedId(historyRecords = []) {
+  const chronological = [...historyRecords]
+    .filter((h) => h && h.timestamp && !isNaN(new Date(h.timestamp)))
+    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  const map = new Map();
+  for (const event of chronological) {
+    const key = normalizeValue(event.bipadoId);
+    if (!key) continue;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(event);
+  }
+  return map;
+}
+
+/**
  * Monta as linhas da aba CONFERENCIA STATUS: uma linha por item da sequência
- * de bipagem, com status por posição (CONFERIDO / AGUARDANDO / PENDENTE),
- * último evento registrado no histórico e data/hora do último bip.
+ * (referência ID / RANGE / ROW). Cada bip realizado acumula uma nova célula
+ * "BIP n" nessa mesma linha — inclusive erros — formando a trilha completa
+ * da conferência até aquele momento.
  */
 export function buildConferenciaStatusRows(sequence = [], columnMap = {}, position = 0, historyRecords = [], filterCtx = {}) {
-  // Último evento por (contexto de filtros + ID bipado). O histórico chega
-  // mais novo primeiro, então a primeira ocorrência já é a mais recente.
-  const latestByContextAndId = new Map();
-  for (const record of historyRecords || []) {
-    const idKey = normalizeValue(record.bipadoId);
-    if (!idKey) continue;
-    const ctxKey = [
-      record.local ?? "",
-      record.tipoPlantio ?? "",
-      record.plantador ?? "",
-      record.quadra ?? "",
-      record.row ?? ""
-    ].join("||");
-    const mapKey = `${ctxKey}|${idKey}`;
-    if (!latestByContextAndId.has(mapKey)) latestByContextAndId.set(mapKey, record);
+  const eventsById = groupEventsByNormalizedId(historyRecords);
+
+  let maxBips = 1;
+  for (const events of eventsById.values()) {
+    if (events.length > maxBips) maxBips = events.length;
   }
-  const currentContext = [
-    filterCtx.local ?? "",
-    filterCtx.tipoPlantio ?? "",
-    filterCtx.plantador ?? "",
-    filterCtx.quadra ?? "",
-    filterCtx.row ?? ""
-  ].join("||");
 
   return sequence.map((record, index) => {
-    const event =
-      latestByContextAndId.get(`${currentContext}|${normalizeValue(record[columnMap.id])}`) || null;
+    const events =
+      eventsById.get(normalizeValue(record[columnMap.id])) || [];
+    const lastEvent = events.length ? events[events.length - 1] : null;
+
     const row = {
       ORDEM: index + 1,
       ID: record[columnMap.id] ?? "",
@@ -302,24 +320,56 @@ export function buildConferenciaStatusRows(sequence = [], columnMap = {}, positi
       if (columnMap[key]) row[label] = record[columnMap[key]] ?? "";
     }
     row["TIPO DE PLANTIO"] = filterCtx.tipoPlantio || "";
-    row.STATUS = index < position ? "CONFERIDO" : index === position ? "AGUARDANDO" : "PENDENTE";
-    row["ULTIMO EVENTO"] = event ? event.status : "";
-    row["DATA BIP"] = "";
-    row["HORA BIP"] = "";
-    if (event?.timestamp && !isNaN(new Date(event.timestamp))) {
-      const stampDate = new Date(event.timestamp);
-      row["DATA BIP"] = stampDate.toLocaleDateString("pt-BR");
-      row["HORA BIP"] = stampDate.toLocaleTimeString("pt-BR", { hour12: false });
+
+    // Cada bip vira uma célula nova na coluna sequencial BIP 1..N
+    row["QTDE BIPAGENS"] = events.length;
+    events.forEach((event, idx) => {
+      row[`BIP ${idx + 1}`] = `${event.status} ${confFmtTime(event.timestamp)}`;
+    });
+    for (let n = events.length + 1; n <= maxBips; n++) {
+      row[`BIP ${n}`] = "";
     }
+
+    row["ULTIMO EVENTO"] = lastEvent ? lastEvent.status : "";
+    row["DATA BIP"] = lastEvent ? confFmtDate(lastEvent.timestamp) : "";
+    row["HORA BIP"] = lastEvent ? confFmtTime(lastEvent.timestamp) : "";
+    row.STATUS = index < position ? "CONFERIDO" : index === position ? "AGUARDANDO" : "PENDENTE";
     return row;
   });
 }
 
 /**
- * Monta o workbook completo do progresso: cada aba original da planilha
- * importada é recriada e ao final entra a aba CONFERENCIA STATUS.
+ * Monta o log completo de TODOS os bips do dia (conferidos, reconferências
+ * e erros), em ordem cronológica — é o "histórico do dia" que vai para o Excel.
  */
-export function buildConferenciaFullWorkbook({ originalRows = [], statusRows = [] }) {
+export function buildConferenciaDailyRows(historyRecords = []) {
+  const todayKey = new Date().toDateString();
+  return [...(historyRecords || [])]
+    .filter((h) => h && h.timestamp && !isNaN(new Date(h.timestamp)))
+    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+    .filter((h) => new Date(h.timestamp).toDateString() === todayKey)
+    .map((h) => ({
+      DATA: confFmtDate(h.timestamp),
+      HORA: confFmtTime(h.timestamp),
+      LOCAL: h.local || "",
+      "TIPO DE PLANTIO": h.tipoPlantio || "",
+      PLANTADOR: h.plantador || "",
+      QUADRA: h.quadra || "",
+      ROW: h.row || "",
+      "ESPERADO ID": h.esperadoId ?? "",
+      "ESPERADO RANGE": h.esperadoRange ?? "",
+      "BIPADO ID": h.bipadoId ?? "",
+      "BIPADO RANGE": h.bipadoRange ?? "",
+      EVENTO: h.status || "",
+      POSICAO: h.posicao ?? ""
+    }));
+}
+
+/**
+ * Monta o workbook completo do progresso: cada aba original da planilha
+ * importada é recriada, entra a aba CONFERENCIA STATUS e o log HISTORICO DO DIA.
+ */
+export function buildConferenciaFullWorkbook({ originalRows = [], statusRows = [], dailyRows = [] }) {
   const workbook = XLSX.utils.book_new();
   const groups = new Map();
   for (const originalRow of originalRows || []) {
@@ -346,15 +396,24 @@ export function buildConferenciaFullWorkbook({ originalRows = [], statusRows = [
   while (usedNames.has(statusName)) {
     statusName = sanitizeSheetName(`${CONF_STATUS_SHEET} (${statusSuffix++})`);
   }
+  usedNames.add(statusName);
   const statusContent = statusRows.length ? statusRows : [{ AVISO: "Nenhuma sequência de conferência ativa." }];
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(statusContent), statusName);
+
+  let dailyName = CONF_DAILY_SHEET;
+  let dailySuffix = 1;
+  while (usedNames.has(dailyName)) {
+    dailyName = sanitizeSheetName(`${CONF_DAILY_SHEET} (${dailySuffix++})`);
+  }
+  const dailyContent = dailyRows.length ? dailyRows : [{ AVISO: "Nenhum bip registrado hoje." }];
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(dailyContent), dailyName);
 
   return workbook;
 }
 
 /**
- * Gera o arquivo Excel completo do progresso (abas originais + CONFERENCIA STATUS)
- * e dispara o download no navegador.
+ * Gera o arquivo Excel completo do progresso (abas originais + CONFERENCIA STATUS
+ * + HISTORICO DO DIA) e dispara o download no navegador.
  * @returns {string} nome do arquivo gerado
  */
 export function downloadConferenciaProgressWorkbook({
@@ -366,7 +425,8 @@ export function downloadConferenciaProgressWorkbook({
   filterCtx
 }) {
   const statusRows = buildConferenciaStatusRows(sequence, columnMap, position, historyRecords, filterCtx);
-  const workbook = buildConferenciaFullWorkbook({ originalRows, statusRows });
+  const dailyRows = buildConferenciaDailyRows(historyRecords);
+  const workbook = buildConferenciaFullWorkbook({ originalRows, statusRows, dailyRows });
   const fileName = getExportFileName("xlsx", "Conferencia_Progresso");
   downloadBlob(
     new Blob([XLSX.write(workbook, { bookType: "xlsx", type: "array" })], { type: MIME_XLSX }),
@@ -377,16 +437,19 @@ export function downloadConferenciaProgressWorkbook({
 
 /**
  * Atualiza Progresso_Conferencia.xlsx dentro da pasta escolhida pelo usuário
- * (File System Access API), contendo somente a aba CONFERENCIA STATUS.
+ * (File System Access API), com as abas CONFERENCIA STATUS e HISTORICO DO DIA.
  * Chamado a cada bipagem quando o auto-salvamento está ativo.
  * @returns {Promise<boolean>} true se gravou com sucesso
  */
-export async function writeConferenciaProgressToDirectory(dirHandle, statusRows = []) {
+export async function writeConferenciaProgressToDirectory(dirHandle, { statusRows = [], dailyRows = [] } = {}) {
   if (!dirHandle) return false;
   try {
     const workbook = XLSX.utils.book_new();
-    const content = statusRows.length ? statusRows : [{ AVISO: "Nenhuma sequência de conferência ativa." }];
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(content), sanitizeSheetName(CONF_STATUS_SHEET));
+    const statusContent = statusRows.length ? statusRows : [{ AVISO: "Nenhuma sequência de conferência ativa." }];
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(statusContent), sanitizeSheetName(CONF_STATUS_SHEET));
+    const dailyContent = dailyRows.length ? dailyRows : [{ AVISO: "Nenhum bip registrado hoje." }];
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(dailyContent), sanitizeSheetName(CONF_DAILY_SHEET));
+
     const blob = new Blob([XLSX.write(workbook, { bookType: "xlsx", type: "array" })], { type: MIME_XLSX });
     const fileHandle = await dirHandle.getFileHandle("Progresso_Conferencia.xlsx", { create: true });
     const writable = await fileHandle.createWritable();
