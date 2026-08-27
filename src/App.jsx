@@ -1069,7 +1069,7 @@ const App = () => {
         />
       )}
 
-      {/* MÓDULO: Conferência de Ensaio */}
+{/* MÓDULO: Conferência de Ensaio */}
       {activeSection === "conferencia" && (
         <ConferenciaEnsaio
           rows={rows}
@@ -1078,9 +1078,17 @@ const App = () => {
           displayColumns={displayColumns}
         />
       )}
-      </div>
 
-      {exportMessage && (
+{activeSection === "conferencia" && (
+        <ConferenciaEnsaio
+          rows={rows}
+          headers={headers}
+          idColumn={idColumn}
+          displayColumns={displayColumns}
+        />
+      )}
+
+      {/* exportMessage && (
         <div
           style={{
             maxWidth: 1200,
@@ -1097,25 +1105,23 @@ const App = () => {
           {exportMessage}
         </div>
       )}
-        </main>
-      </div>
 
       {/* Scanner Modal */}
-      <QRScanner
-        open={scannerOpen}
-        status={scannerStatus}
-        videoRef={scannerVideoRef}
-        onClose={() => setScannerOpen(false)}
-      />
+    <QRScanner
+      open={scannerOpen}
+      status={scannerStatus}
+      videoRef={scannerVideoRef}
+      onClose={() => setScannerOpen(false)}
+    />
 
-      {/* Delete Box Modal */}
-      <DeleteBoxModal
-        candidate={deleteBoxCandidate}
-        onCancel={() => setDeleteBoxCandidate(null)}
-        onConfirm={confirmDeleteBox}
-      />
-    </div>
-  );
+    {/* Delete Box Modal */}
+    <DeleteBoxModal
+      candidate={deleteBoxCandidate}
+      onCancel={() => setDeleteBoxCandidate(null)}
+      onConfirm={confirmDeleteBox}
+    />
+  </div>
+</div>
 }
 
 export default App;
