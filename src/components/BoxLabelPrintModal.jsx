@@ -4,6 +4,7 @@ import { getBoxLabelPayload, generateQrDataUrl } from "../services/boxLabelServi
 import { ZEBRA_PRINTERS, PRINTER_TYPES, DEFAULT_PRINTER_CONFIG, resolvePrinterConfig } from "../utils/printerConfig.js";
 import { generateZplLabel } from "../services/zplGenerator.js";
 import { commonPrint, thermalPrintZpl, sendToPrinterService } from "../services/printerAdapters.js";
+import { sendToBartender, getBartenderTemplate } from "../services/bartenderAdapter.js";
 
 export default function BoxLabelPrintModal({ open, box, onClose }) {
   const [sizeId, setSizeId] = useState(DEFAULT_LABEL_SIZE_ID);
@@ -54,32 +55,31 @@ export default function BoxLabelPrintModal({ open, box, onClose }) {
 
   if (!open || !payload) return null;
 
+  const isBartender = printerType === "bartender";
   const handlePrint = async () => {
     setStatusMsg(""); setStatusError(false);
     try {
       if (printerType === PRINTER_TYPES.COMMON) {
         const r = await commonPrint({ payload, labelSize, quantity: qty, qrDataUrl });
         setStatusMsg(r.message); setStatusError(false);
+      } else if (isBartender) {
+        try {
+          const r = await sendToBartender({ payload, labelSize, printerConfig: { ...printerConfig, quantity: qtyNum } });
+          setStatusMsg(r.message + ` [${r.template}]`); setStatusError(false);
+        } catch (e) {
+          setStatusMsg(e.message); setStatusError(true);
+          // Mostra modelo esperado para diagnóstico
+          setZplPreview(`Template: ${getBartenderTemplate(labelSize)}\nDados: ${JSON.stringify({ boxNumber: `CAIXA ${payload.number}`, qrData: payload.qrValue, location: payload.description || "LRV" }, null, 2)}`);
+          setShowAdvanced(true);
+        }
       } else {
         const { zpl } = thermalPrintZpl({ payload, labelSize, printerConfig });
-        // Se IP/serviço configurado tenta enviar, senão apenas informa ZPL gerado
         if (ip.trim()) {
-          try {
-            const r = await sendToPrinterService({ zpl, printerConfig });
-            setStatusMsg(r.message);
-          } catch (e) {
-            setStatusMsg(e.message + " — ZPL disponível abaixo."); setStatusError(true);
-            setZplPreview(zpl); setShowAdvanced(true);
-          }
+          try { const r = await sendToPrinterService({ zpl, printerConfig }); setStatusMsg(r.message); }
+          catch (e) { setStatusMsg(e.message + " — ZPL disponível abaixo."); setStatusError(true); setZplPreview(zpl); setShowAdvanced(true); }
         } else {
-          // Sem IP: gera ZPL e tenta serviço local; se falhar mostra ZPL
-          try {
-            const r = await sendToPrinterService({ zpl, printerConfig });
-            setStatusMsg(r.message);
-          } catch (e) {
-            setStatusMsg("ZPL gerado com sucesso. Copie e envie via BarTender/driver."); setStatusError(false);
-            setZplPreview(zpl); setShowAdvanced(true);
-          }
+          try { const r = await sendToPrinterService({ zpl, printerConfig }); setStatusMsg(r.message); }
+          catch (e) { setStatusMsg("ZPL gerado com sucesso. Copie e envie via BarTender/driver."); setStatusError(false); setZplPreview(zpl); setShowAdvanced(true); }
         }
       }
     } catch (e) {
@@ -125,8 +125,21 @@ export default function BoxLabelPrintModal({ open, box, onClose }) {
             <select value={printerType} onChange={(e) => setPrinterType(e.target.value)} style={{ marginTop: 6, width: "100%", padding: "10px 12px", border: "1px solid var(--border-strong, #cbd5e1)", borderRadius: 8, background: "var(--surface-soft, #f8fafc)" }}>
               <option value={PRINTER_TYPES.COMMON}>Impressora comum (laser/jato/PDF)</option>
               <option value={PRINTER_TYPES.THERMAL}>Impressora térmica (Zebra ZPL)</option>
+              <option value="bartender">BarTender</option>
             </select>
           </div>
+
+          {isBartender && (
+            <div style={{ padding: 12, background: "var(--surface-soft, #f1f5f9)", borderRadius: 8, border: "1px solid var(--border, #e2e8f0)", display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ fontSize: 11, color: "var(--muted)" }}>Modelo: <strong>{getBartenderTemplate(labelSize)}</strong> · Campos: BOX_NUMBER, LOCATION, QR_DATA · Impressora: {zebraModel} via BarTender</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div><label style={{ fontSize: 11, fontWeight: 700 }}>Modelo Zebra</label><select value={zebraModel} onChange={(e) => setZebraModel(e.target.value)} style={{ marginTop: 4, width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)" }}>{Object.keys(ZEBRA_PRINTERS).map((m) => <option key={m} value={m}>{m}</option>)}</select></div>
+                <div><label style={{ fontSize: 11, fontWeight: 700 }}>IP BarTender (opcional)</label><input value={ip} onChange={(e) => setIp(e.target.value)} placeholder="localhost" style={{ marginTop: 4, width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)" }} /></div>
+              </div>
+              <button type="button" onClick={() => setShowAdvanced(!showAdvanced)} style={{ fontSize: 12, background: "transparent", border: "none", color: "#22C55E", cursor: "pointer", textAlign: "left", padding: 0 }}>⚙ {showAdvanced ? "Ocultar" : "Ver dados enviados"}</button>
+              {showAdvanced && zplPreview && <textarea readOnly value={zplPreview} style={{ width: "100%", minHeight: 80, fontFamily: "monospace", fontSize: 10, padding: 8, borderRadius: 8, border: "1px solid var(--border-strong)" }} />}
+            </div>
+          )}
 
           {printerType === PRINTER_TYPES.THERMAL && (
             <div style={{ padding: 12, background: "var(--surface-soft, #f1f5f9)", borderRadius: 8, border: "1px solid var(--border, #e2e8f0)", display: "flex", flexDirection: "column", gap: 10 }}>
