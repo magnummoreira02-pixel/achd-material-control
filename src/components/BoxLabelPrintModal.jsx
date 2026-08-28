@@ -3,14 +3,14 @@ import { LABEL_SIZES, LABEL_SIZE_IDS, DEFAULT_LABEL_SIZE_ID } from "../utils/lab
 import { getBoxLabelPayload, generateQrDataUrl } from "../services/boxLabelService.js";
 import { ZEBRA_PRINTERS, PRINTER_TYPES, DEFAULT_PRINTER_CONFIG, resolvePrinterConfig } from "../utils/printerConfig.js";
 import { generateZplLabel } from "../services/zplGenerator.js";
-import { commonPrint, thermalPrintZpl, sendToPrinterService } from "../services/printerAdapters.js";
+import { commonPrint, thermalPrintZpl, sendToPrinterService, testPrint } from "../services/printerAdapters.js";
 import { sendToBartender, getBartenderTemplate } from "../services/bartenderAdapter.js";
 
 export default function BoxLabelPrintModal({ open, box, onClose }) {
   const [sizeId, setSizeId] = useState(DEFAULT_LABEL_SIZE_ID);
   const [qty, setQty] = useState(1);
   const [qrDataUrl, setQrDataUrl] = useState("");
-  const [printerType, setPrinterType] = useState(DEFAULT_PRINTER_CONFIG.type);
+  const [printerType, setPrinterType] = useState(PRINTER_TYPES.THERMAL);
   const [zebraModel, setZebraModel] = useState(DEFAULT_PRINTER_CONFIG.model);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [dpi, setDpi] = useState(DEFAULT_PRINTER_CONFIG.dpi);
@@ -19,6 +19,8 @@ export default function BoxLabelPrintModal({ open, box, onClose }) {
   const [zplPreview, setZplPreview] = useState("");
   const [statusMsg, setStatusMsg] = useState("");
   const [statusError, setStatusError] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
+  const imprimindo = isPrinting;
 
   const payload = box ? getBoxLabelPayload(box) : null;
   const labelSize = LABEL_SIZES[sizeId] || LABEL_SIZES[DEFAULT_LABEL_SIZE_ID];
@@ -56,35 +58,40 @@ export default function BoxLabelPrintModal({ open, box, onClose }) {
   if (!open || !payload) return null;
 
   const isBartender = printerType === "bartender";
-  const handlePrint = async () => {
+  const handleTest = async () => {
     setStatusMsg(""); setStatusError(false);
     try {
+      if (!payload?.id) throw new Error("Caixa sem identificação.");
+      if (!labelSize?.width || !labelSize?.height) throw new Error("Tamanho de etiqueta inválido.");
+      if (!printerConfig) throw new Error("Impressora não configurada.");
+      const r = await testPrint({ payload, labelSize, printerConfig });
+      setZplPreview(r.zpl); setShowAdvanced(true);
+      setStatusMsg("✅ ZPL validado com sucesso");
+    } catch { setStatusMsg("❌ Não foi possível gerar o ZPL"); setStatusError(true); }
+  };
+  const handlePrint = async () => {
+    if (imprimindo) return;
+    setIsPrinting(true); setStatusMsg("🖨 Imprimindo..."); setStatusError(false);
+    try {
+      if (!payload?.id) throw new Error("Caixa sem identificação.");
+      if (!labelSize?.width || !labelSize?.height) throw new Error("Tamanho de etiqueta inválido.");
+      if (!printerConfig) throw new Error("Impressora não configurada.");
       if (printerType === PRINTER_TYPES.COMMON) {
-        const r = await commonPrint({ payload, labelSize, quantity: qty, qrDataUrl });
-        setStatusMsg(r.message); setStatusError(false);
+        await commonPrint({ payload, labelSize, quantity: qtyNum, qrDataUrl });
+        setStatusMsg("✅ Etiqueta enviada para impressão"); setStatusError(false);
       } else if (isBartender) {
-        try {
-          const r = await sendToBartender({ payload, labelSize, printerConfig: { ...printerConfig, quantity: qtyNum } });
-          setStatusMsg(r.message + ` [${r.template}]`); setStatusError(false);
-        } catch (e) {
-          setStatusMsg(e.message); setStatusError(true);
-          // Mostra modelo esperado para diagnóstico
-          setZplPreview(`Template: ${getBartenderTemplate(labelSize)}\nDados: ${JSON.stringify({ boxNumber: `CAIXA ${payload.number}`, qrData: payload.qrValue, location: payload.description || "LRV" }, null, 2)}`);
-          setShowAdvanced(true);
-        }
+        setStatusMsg("❌ Erro ao imprimir etiqueta — BarTender — impressão manual (requer licença Automation)"); setStatusError(true);
+        setZplPreview(`BarTender — impressão manual\nTemplate: ${getBartenderTemplate(labelSize)}\nDados: ${JSON.stringify({ boxNumber: `CAIXA ${payload.number}`, qrData: payload.qrValue, location: payload.description || "LRV" }, null, 2)}\nUse o Designer manualmente ou utilize Impressora térmica (Zebra ZPL).`);
+        setShowAdvanced(true);
       } else {
-        const { zpl } = thermalPrintZpl({ payload, labelSize, printerConfig });
-        if (ip.trim()) {
-          try { const r = await sendToPrinterService({ zpl, printerConfig }); setStatusMsg(r.message); }
-          catch (e) { setStatusMsg(e.message + " — ZPL disponível abaixo."); setStatusError(true); setZplPreview(zpl); setShowAdvanced(true); }
-        } else {
-          try { const r = await sendToPrinterService({ zpl, printerConfig }); setStatusMsg(r.message); }
-          catch (e) { setStatusMsg("ZPL gerado com sucesso. Copie e envie via BarTender/driver."); setStatusError(false); setZplPreview(zpl); setShowAdvanced(true); }
-        }
+        const { zpl } = thermalPrintZpl({ payload, labelSize, printerConfig, quantity: qtyNum });
+        if (!zpl || !zpl.includes("^XA")) throw new Error("ZPL inválido.");
+        try { await sendToPrinterService({ zpl, printerConfig }); setStatusMsg("✅ Etiqueta enviada para impressão"); }
+        catch (e) { setStatusMsg("❌ Erro ao enviar etiqueta"); setStatusError(true); setZplPreview(zpl); setShowAdvanced(true); }
       }
     } catch (e) {
-      setStatusMsg(e.message || "Não foi possível enviar a etiqueta para a impressora."); setStatusError(true);
-    }
+      setStatusMsg("❌ Erro ao enviar etiqueta"); setStatusError(true);
+    } finally { setIsPrinting(false); }
   };
 
   const qtyNum = Math.max(1, Math.min(99, Number(qty) || 1));
@@ -125,7 +132,7 @@ export default function BoxLabelPrintModal({ open, box, onClose }) {
             <select value={printerType} onChange={(e) => setPrinterType(e.target.value)} style={{ marginTop: 6, width: "100%", padding: "10px 12px", border: "1px solid var(--border-strong, #cbd5e1)", borderRadius: 8, background: "var(--surface-soft, #f8fafc)" }}>
               <option value={PRINTER_TYPES.COMMON}>Impressora comum (laser/jato/PDF)</option>
               <option value={PRINTER_TYPES.THERMAL}>Impressora térmica (Zebra ZPL)</option>
-              <option value="bartender">BarTender</option>
+              <option value="bartender">BarTender — impressão manual</option>
             </select>
           </div>
 
@@ -182,8 +189,8 @@ export default function BoxLabelPrintModal({ open, box, onClose }) {
               <div style={{ width: `${labelSize.width}mm`, height: `${labelSize.height}mm`, maxWidth: "100%", background: "#fff", border: "1px solid #0f172a", borderRadius: 4, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 4, overflow: "hidden", boxSizing: "border-box" }}>
                 {sizeId === "45x18" ? (
                   <div style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", justifyContent: "space-between", padding: "0 4px" }}>
-                    <span style={{ fontWeight: 800, fontSize: 10, fontFamily: "monospace" }}>CAIXA {payload.number}</span>
-                    {qrDataUrl ? <img src={qrDataUrl} alt="QR" style={{ width: 14 + "mm", height: 14 + "mm", objectFit: "contain" }} /> : <span style={{ fontSize: 8 }}>QR</span>}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 1 }}><span style={{ fontWeight: 800, fontSize: 9, fontFamily: "monospace" }}>CAIXA {payload.number}</span><span style={{ fontSize: 6, color: "#475569" }}>LOCAL: {payload.description || "LRV"}</span></div>
+                    {qrDataUrl ? <img src={qrDataUrl} alt="QR" style={{ width: 13 + "mm", height: 13 + "mm", objectFit: "contain" }} /> : <span style={{ fontSize: 8 }}>QR</span>}
                   </div>
                 ) : sizeId === "50x50" ? (
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
@@ -206,9 +213,10 @@ export default function BoxLabelPrintModal({ open, box, onClose }) {
         </div>
 
         {statusMsg && <div style={{ margin: "0 20px", padding: "10px 12px", borderRadius: 8, background: statusError ? "rgba(239,68,68,0.12)" : "rgba(34,197,94,0.12)", border: `1px solid ${statusError ? "rgba(239,68,68,0.3)" : "rgba(34,197,94,0.3)"}`, color: statusError ? "#DC2626" : "#15803D", fontSize: 12 }}>{statusMsg}</div>}
-        <footer style={{ padding: "14px 20px", borderTop: "1px solid var(--border, #e2e8f0)", display: "flex", justifyContent: "space-between", gap: 10 }}>
-          <button type="button" onClick={onClose} style={{ flex: 1, padding: "10px 16px", background: "transparent", border: "1px solid var(--border-strong, #cbd5e1)", borderRadius: 8, cursor: "pointer" }}>Cancelar</button>
-          <button type="button" onClick={handlePrint} style={{ flex: 1, padding: "10px 16px", background: "#22C55E", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 700 }}>🖨 Imprimir</button>
+        <footer style={{ padding: "14px 20px", borderTop: "1px solid var(--border, #e2e8f0)", display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button type="button" onClick={onClose} disabled={imprimindo} style={{ flex: 1, minWidth: 90, padding: "10px 12px", background: "transparent", border: "1px solid var(--border-strong, #cbd5e1)", borderRadius: 8, cursor: imprimindo ? "not-allowed" : "pointer" }}>Cancelar</button>
+          <button type="button" onClick={handleTest} disabled={imprimindo} style={{ padding: "10px 14px", background: "transparent", border: "1px solid #60A5FA", color: "#60A5FA", borderRadius: 8, cursor: imprimindo ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 700 }}>TESTAR IMPRESSÃO</button>
+          <button type="button" onClick={handlePrint} disabled={imprimindo} style={{ flex: 1, minWidth: 110, padding: "10px 14px", background: imprimindo ? "#94a3b8" : "#22C55E", color: "#fff", border: "none", borderRadius: 8, cursor: imprimindo ? "not-allowed" : "pointer", fontWeight: 700 }}>{imprimindo ? "IMPRIMINDO..." : "🖨 IMPRIMIR"}</button>
         </footer>
       </div>
     </div>
