@@ -2,10 +2,12 @@ import QRCode from "qrcode";
 
 export function getBoxLabelPayload(box) {
   if (!box) return null;
+  const trialId = box.trialId || box.ensaio || box.description || box.materials?.[0]?.row?.["ENSAIO"] || box.materials?.[0]?.row?.["ensaio"] || "";
   return {
     id: box.id,
     number: String(box.number).padStart(3, "0"),
     description: box.description || "",
+    trialId,
     status: box.status || "",
     createdAt: box.createdAt || "",
     count: (box.materials || []).length,

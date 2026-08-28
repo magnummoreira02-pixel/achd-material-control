@@ -114,6 +114,27 @@ app.post("/print", (req, res) => {
   });
 });
 
+const XLSX = require("xlsx");
+const INVENTORY_PATH = "C:\\Users\\mamore\\OneDrive - Stine Seed\\INVENTARIO\\Estoque.xlsx";
+
+app.post("/save-inventory", express.json({ limit: "20mb" }), (req, res) => {
+  try {
+    const { data } = req.body;
+    if (!Array.isArray(data)) return res.status(400).json({ ok: false, error: "data deve ser array" });
+    const dir = path.dirname(INVENTORY_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Estoque");
+    XLSX.writeFile(wb, INVENTORY_PATH);
+    console.log("[INVENTORY] Salvo em", INVENTORY_PATH, "-", data.length, "linhas");
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[INVENTORY] Erro ao salvar:", err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 app.use((err, req, res, next) => {
   console.error("[PRINT ERROR] Interno:", err.message);
   res.status(500).json({ success: false, message: "Erro interno no serviço de impressão" });

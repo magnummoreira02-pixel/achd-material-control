@@ -19,6 +19,7 @@ import Backup from './components/Backup.jsx';
 import ConferenciaEnsaio from './components/ConferenciaEnsaio.jsx';
 import Icon from './components/ui/Icon.jsx';
 import "./styles/conferencia.css";
+import { useAutoSaveInventory } from "./hooks/useAutoSaveInventory.js";
 
 // Import services
 import * as storageService from './services/storageService.js';
@@ -211,6 +212,10 @@ const App = () => {
   const searchInputRef = useRef(null);
   const scannerVideoRef = useRef(null);
   const scannerStreamRef = useRef(null);
+  const dirtyRef = useRef(false);
+  const estoqueDataRef = useRef([]);
+  useEffect(() => { estoqueDataRef.current = boxes.map((b) => ({ numero: b.number, descricao: b.description, itens: (b.materials||[]).length, status: b.status })); dirtyRef.current = true; }, [boxes]);
+  useAutoSaveInventory(estoqueDataRef, dirtyRef);
 
   // Effects for persistent storage
   useEffect(() => {
@@ -753,7 +758,7 @@ const App = () => {
 
   const processQRCode = (value) => {
     const code = String(value ?? "").trim();
-    const scannedBox = boxes.find((box) => normalizeValue(`CX${box.number}`) === normalizeValue(code) || normalizeValue(`CAIXA-${box.number}`) === normalizeValue(code) || normalizeValue(`CAIXA ${box.number}`) === normalizeValue(code));
+    const scannedBox = boxes.find((box) => normalizeValue(`CX${box.number}`) === normalizeValue(code) || normalizeValue(`CAIXA-${box.number}`) === normalizeValue(code) || normalizeValue(`CAIXA ${box.number}`) === normalizeValue(code) || normalizeValue(`CAIXA:${box.number}`) === normalizeValue(code));
     if (scannedBox) {
       setActiveBoxId(scannedBox.id);
       setLastProcessedCode(code);

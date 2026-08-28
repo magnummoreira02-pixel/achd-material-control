@@ -1,21 +1,15 @@
 # STATUS PROJETO — ACHD MATERIAL CONTROL
 
 **Atualizado em:** 27/08/2026
-**Progresso geral:** 60% (Fase 1 100% + Fase 2 100% + Fase 3 60% + Fase 4 60%)
+**Progresso geral:** 60% (Fase 1-4 100% + Fase 5 60%)
 
-## Fase 1 — Seleção de aba
-- `excelService`/`excelWorker` modo dual, `App.jsx` listar→auto/seletor, `ImportadorPlanilha` seletor
+## Fase 5 — Módulo de Caixas + Auto-save (60% implementado 27/08/2026)
+- **Parte 0 Histórico:** `services/boxHistoryService.js` (localStorage `box_print_history`, `addHistoryEntry`/`getHistoryByBox`/`getAllHistory`, toda `handlePrint` grava sent/error) — base para reimpressão/QR
+- **Parte 7 Auto-save OneDrive:** `xlsx` já instalado, `print-server.js` nova rota `POST /save-inventory` separada de `/print` (não altera ZPL/USB), `hooks/useAutoSaveInventory.js` 30s (`estoqueDataRef`/`dirtyRef` em `App.jsx` ligado a `boxes`, falha silenciosa), caminho `C:\Users\mamore\OneDrive - Stine Seed\INVENTARIO\Estoque.xlsx`
+- **Parte 1 Ensaio:** `boxLabelService.js` `trialId` (box.trialId||descricao||materials[0].ENSAIO), modal mostra Ensaio + QR `CAIXA:001` estável
+- **Parte 3/4 Reimpressão segura:** `BoxLabelPrintModal` detecta `getHistoryByBox` → botão `REIMPRIMIR` + aviso data, confirmação `qty>1`, `imprimindo` travando botões
+- **Parte 5 Histórico visível:** `components/BoxHistoryPanel.jsx` lista por caixa (ZT411/USB, data, qtd, trialId)
+- **Parte 6 QR reversa:** `qrValue BOX:001`, `App.jsx processQRCode` reconhece `CAIXA:001` → ativa caixa
+- **Partes 2/3 Tamanhos/Quantidade:** plug-and-play `LABEL_SIZES` + `mmToDots`, `qty 1-99` com disabled
 
-## Fase 2 — Universal (Comum + Térmica ZPL)
-- `labelSizes` 45x18/50x50/100x100 mm, `printerConfig` ZD220(203)/ZT410(203)/ZT411(300) + mmToDots, `zplGenerator` isolado, `printerAdapters` common/thermal
-
-## Fase 3 — BarTender (60%)
-- `bartenderAdapter` isolado (CAIXA_45x18/50x50/100x100.btw, BOX_NUMBER/QR_DATA), APP→SERVIÇO LOCAL→BARTENDER, sem contornar Starter
-
-## Fase 4 — ZPL Direto incremental (60% — 27/08/2026)
-- **3 arquivos autorizados** sem reescrever: `BoxLabelPrintModal.jsx` + `zplGenerator.js` + `printerAdapters.js`; `ControleCaixas.jsx`/`global.css`/`index.html` não alterados
-- **Modal:** estado `imprimindo` (`isPrinting`+ alias `imprimindo`), botão `IMPRIMINDO...` disabled anti-duplo clique, `TESTAR IMPRESSÃO` valida box.id/tamanho/impressora/ZPL sem enviar, `IMPRIMIR` valida + `✅ Etiqueta enviada para impressão` / `❌ Erro ao imprimir etiqueta`
-- **ZPL 45×18:** `marginX`/`marginY` 1.5mm + `qrSizeMm` 14mm parametrizados via `mmToDots(mm,dpi)`, `widthMm`/`heightMm`/`dpi` recebidos por `labelSize`/`printerConfig`, preparado para 50x50/100x50/100x100 sem duplicar layouts, QR `CAIXA:001` estável via `box.id`
-- **Adapters:** `sendToPrinterService` preservado, adicionado `validatePrintRequest` + `testConnection()` leve (alias `testPrint`) sem impressão real, fluxo `Modal→zplGenerator→ZPL→sendToPrinterService→impressora`, suporte ZD220/ZT410/ZT411 via `printerConfig` (não hardcoded no gerador)
-
-**Build:** SUCESSO 27/08/2026 (141 modules)
+**Build:** SUCESSO 27/08/2026 (144 modules) — `zplGenerator.js` e `/print` congelados

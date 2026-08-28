@@ -5,6 +5,8 @@ import { ZEBRA_PRINTERS, PRINTER_TYPES, DEFAULT_PRINTER_CONFIG, resolvePrinterCo
 import { generateZplLabel } from "../services/zplGenerator.js";
 import { commonPrint, thermalPrintZpl, sendToPrinterService, testPrint } from "../services/printerAdapters.js";
 import { sendToBartender, getBartenderTemplate } from "../services/bartenderAdapter.js";
+import { addHistoryEntry, getHistoryByBox } from "../services/boxHistoryService.js";
+import BoxHistoryPanel from "./BoxHistoryPanel.jsx";
 
 export default function BoxLabelPrintModal({ open, box, onClose }) {
   const [sizeId, setSizeId] = useState(DEFAULT_LABEL_SIZE_ID);
@@ -73,7 +75,12 @@ export default function BoxLabelPrintModal({ open, box, onClose }) {
   };
   const handlePrint = async () => {
     if (imprimindo) return;
+    const history = getHistoryByBox(payload.number);
+    const alreadyPrinted = history.some((r) => r.status === "sent");
+    if (alreadyPrinted && !window.confirm(`Esta caixa já foi impressa em ${new Date(history[0].timestamp).toLocaleString("pt-BR")}. Deseja reimprimir?`)) return;
+    if (qtyNum > 1 && !window.confirm(`Confirma impressão de ${qtyNum} etiquetas?`)) return;
     setIsPrinting(true); setStatusMsg("🖨 Imprimindo..."); setStatusError(false);
+    let status = "sent";
     try {
       if (!payload?.id) throw new Error("Caixa sem identificação.");
       if (!labelSize?.width || !labelSize?.height) throw new Error("Tamanho de etiqueta inválido.");
@@ -84,16 +91,19 @@ export default function BoxLabelPrintModal({ open, box, onClose }) {
       } else if (isBartender) {
         setStatusMsg("❌ Erro ao imprimir etiqueta — BarTender — impressão manual (requer licença Automation)"); setStatusError(true);
         setZplPreview(`BarTender — impressão manual\nTemplate: ${getBartenderTemplate(labelSize)}\nDados: ${JSON.stringify({ boxNumber: `CAIXA ${payload.number}`, qrData: payload.qrValue, location: payload.description || "LRV" }, null, 2)}\nUse o Designer manualmente ou utilize Impressora térmica (Zebra ZPL).`);
-        setShowAdvanced(true);
+        setShowAdvanced(true); status = "error";
       } else {
         const { zpl } = thermalPrintZpl({ payload, labelSize, printerConfig, quantity: qtyNum });
         if (!zpl || !zpl.includes("^XA")) throw new Error("ZPL inválido.");
         try { await sendToPrinterService({ zpl, printerConfig }); setStatusMsg("✅ Etiqueta enviada para impressão"); }
-        catch (e) { setStatusMsg("❌ Erro ao enviar etiqueta"); setStatusError(true); setZplPreview(zpl); setShowAdvanced(true); }
+        catch (e) { setStatusMsg("❌ Erro ao enviar etiqueta"); setStatusError(true); status = "error"; setZplPreview(zpl); setShowAdvanced(true); }
       }
     } catch (e) {
-      setStatusMsg("❌ Erro ao enviar etiqueta"); setStatusError(true);
-    } finally { setIsPrinting(false); }
+      setStatusMsg("❌ Erro ao enviar etiqueta"); setStatusError(true); status = "error";
+    } finally {
+      addHistoryEntry({ boxNumber: payload.number, action: alreadyPrinted ? "reprinted" : "printed", printer: printerConfig.model || zebraModel, connection: printerConfig.connection || connection, quantity: qtyNum, status, trialId: payload.trialId || "" });
+      setIsPrinting(false);
+    }
   };
 
   const qtyNum = Math.max(1, Math.min(99, Number(qty) || 1));
@@ -198,6 +208,8 @@ export default function BoxLabelPrintModal({ open, box, onClose }) {
             </div>
           )}
 
+          {payload.trialId && <div style={{ fontSize: 11, color: "var(--muted)", textAlign: "center" }}>Ensaio: {payload.trialId}</div>}
+          {getHistoryByBox(payload.number).length > 0 && <div style={{ fontSize: 11, color: "#d97706", textAlign: "center" }}>⚠ Já impressa em {new Date(getHistoryByBox(payload.number)[0].timestamp).toLocaleString("pt-BR")}</div>}
           <div>
             <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted, #64748b)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 8, textAlign: "center" }}>Pré-visualização</div>
             <div style={{ display: "grid", placeItems: "center", padding: 16, background: "var(--surface-soft, #f1f5f9)", borderRadius: 12, border: "1px dashed var(--border, #e2e8f0)" }}>
@@ -228,10 +240,11 @@ export default function BoxLabelPrintModal({ open, box, onClose }) {
         </div>
 
         {statusMsg && <div style={{ margin: "0 20px", padding: "10px 12px", borderRadius: 8, background: statusError ? "rgba(239,68,68,0.12)" : "rgba(34,197,94,0.12)", border: `1px solid ${statusError ? "rgba(239,68,68,0.3)" : "rgba(34,197,94,0.3)"}`, color: statusError ? "#DC2626" : "#15803D", fontSize: 12 }}>{statusMsg}</div>}
+        <div style={{ margin: "0 20px 10px" }}><BoxHistoryPanel boxNumber={payload.number} /></div>
         <footer style={{ padding: "14px 20px", borderTop: "1px solid var(--border, #e2e8f0)", display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button type="button" onClick={onClose} disabled={imprimindo} style={{ flex: 1, minWidth: 90, padding: "10px 12px", background: "transparent", border: "1px solid var(--border-strong, #cbd5e1)", borderRadius: 8, cursor: imprimindo ? "not-allowed" : "pointer" }}>Cancelar</button>
           <button type="button" onClick={handleTest} disabled={imprimindo} style={{ padding: "10px 14px", background: "transparent", border: "1px solid #60A5FA", color: "#60A5FA", borderRadius: 8, cursor: imprimindo ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 700 }}>TESTAR IMPRESSÃO</button>
-          <button type="button" onClick={handlePrint} disabled={imprimindo} style={{ flex: 1, minWidth: 110, padding: "10px 14px", background: imprimindo ? "#94a3b8" : "#22C55E", color: "#fff", border: "none", borderRadius: 8, cursor: imprimindo ? "not-allowed" : "pointer", fontWeight: 700 }}>{imprimindo ? "IMPRIMINDO..." : "🖨 IMPRIMIR"}</button>
+          <button type="button" onClick={handlePrint} disabled={imprimindo} style={{ flex: 1, minWidth: 110, padding: "10px 14px", background: imprimindo ? "#94a3b8" : "#22C55E", color: "#fff", border: "none", borderRadius: 8, cursor: imprimindo ? "not-allowed" : "pointer", fontWeight: 700 }}>{imprimindo ? "IMPRIMINDO..." : (getHistoryByBox(payload.number).length ? "🖨 REIMPRIMIR" : "🖨 IMPRIMIR")}</button>
         </footer>
       </div>
     </div>
