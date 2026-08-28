@@ -30,22 +30,27 @@ export async function testConnection(opts) {
 }
 
 export async function sendToPrinterService({ zpl, printerConfig }) {
-  const ip = printerConfig.ip?.trim();
-  const port = printerConfig.port || 9100;
-  if (ip) {
-    try {
-      const res = await fetch(`http://${ip}:${port}/print`, { method: "POST", headers: { "Content-Type": "text/plain" }, body: zpl });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return { ok: true, message: "Etiqueta enviada para a impressora térmica." };
-    } catch (e) {
-      throw new Error(`Não foi possível enviar para ${ip}:${port} — ${e.message}`);
-    }
+  if (!zpl) throw new Error("ZPL não gerado.");
+  const isUsb = (printerConfig?.connection || "").toLowerCase() === "usb" || String(printerConfig?.port || "").toUpperCase() === "USB001";
+  if (!isUsb) {
+    const ip = (printerConfig?.ip || "").trim();
+    if (!ip) throw new Error("Informe o IP da impressora Zebra.");
   }
   try {
-    const res = await fetch("http://localhost:3001/print", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ zpl, printer: printerConfig }) });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return { ok: true, message: "Etiqueta enviada via serviço local." };
-  } catch {
-    throw new Error("Serviço de impressão indisponível. ZPL gerado — copie e envie via BarTender/driver.");
+    const payload = { zpl, printer: { ip: printerConfig.ip || "", port: printerConfig.port || (isUsb ? "USB001" : 9100), model: printerConfig.model, dpi: printerConfig.dpi, connection: printerConfig.connection || (isUsb ? "usb" : "network"), name: printerConfig.name || "ZDesigner ZT411-203dpi ZPL" } };
+    const res = await fetch("http://localhost:3001/print", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+    if (data.success === false) throw new Error(data.message || "Falha no serviço");
+    return { ok: true, message: data.message || "ZPL enviado para a impressora" };
+  } catch (e) {
+    if (e.message.includes("Failed to fetch") || e.message.includes("fetch")) {
+      throw new Error("Serviço de impressão indisponível. Inicie com: npm run print-server");
+    }
+    throw e;
   }
 }

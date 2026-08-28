@@ -16,6 +16,8 @@ export default function BoxLabelPrintModal({ open, box, onClose }) {
   const [dpi, setDpi] = useState(DEFAULT_PRINTER_CONFIG.dpi);
   const [ip, setIp] = useState("");
   const [port, setPort] = useState(9100);
+  const [connection, setConnection] = useState("usb");
+  const printerName = "ZDesigner ZT411-203dpi ZPL";
   const [zplPreview, setZplPreview] = useState("");
   const [statusMsg, setStatusMsg] = useState("");
   const [statusError, setStatusError] = useState(false);
@@ -24,7 +26,7 @@ export default function BoxLabelPrintModal({ open, box, onClose }) {
 
   const payload = box ? getBoxLabelPayload(box) : null;
   const labelSize = LABEL_SIZES[sizeId] || LABEL_SIZES[DEFAULT_LABEL_SIZE_ID];
-  const printerConfig = resolvePrinterConfig({ type: printerType, model: zebraModel, dpi: Number(dpi) || 203, ip, port: Number(port) || 9100, manufacturer: "Zebra", language: "ZPL" });
+  const printerConfig = resolvePrinterConfig({ type: printerType, model: zebraModel, dpi: Number(dpi) || 203, ip, port: connection === "usb" ? port : Number(port) || 9100, manufacturer: "Zebra", language: "ZPL", connection, name: printerName });
 
   useEffect(() => {
     if (!open || !payload) return;
@@ -162,15 +164,28 @@ export default function BoxLabelPrintModal({ open, box, onClose }) {
                   </select>
                 </div>
               </div>
-              <div style={{ fontSize: 11, color: "var(--muted)" }}>Linguagem: ZPL · DPI: {printerConfig.dpi} · Conexão: USB/Rede/Serviço local</div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)" }}>Conexão</label>
+                <select value={connection} onChange={(e) => setConnection(e.target.value)} style={{ marginTop: 4, width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)" }}>
+                  <option value="usb">USB — {printerName} / USB001</option>
+                  <option value="network">Rede — TCP/IP 9100</option>
+                </select>
+              </div>
+              {connection === "usb" ? (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <div><label style={{ fontSize: 11, fontWeight: 700 }}>Impressora</label><input value={printerName} disabled style={{ marginTop: 4, width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)" }} /></div>
+                  <div><label style={{ fontSize: 11, fontWeight: 700 }}>Porta</label><input value="USB001" disabled style={{ marginTop: 4, width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)" }} /></div>
+                </div>
+              ) : null}
+              <div style={{ fontSize: 11, color: "var(--muted)" }}>Linguagem: ZPL · DPI: {printerConfig.dpi} · {connection === "usb" ? "USB via Windows" : "Ethernet TCP 9100"} · localhost:3001</div>
               <button type="button" onClick={() => setShowAdvanced(!showAdvanced)} style={{ fontSize: 12, background: "transparent", border: "none", color: "#22C55E", cursor: "pointer", textAlign: "left", padding: 0 }}>⚙ {showAdvanced ? "Ocultar" : "Configuração avançada"}</button>
               {showAdvanced && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                     <div><label style={{ fontSize: 11, fontWeight: 700 }}>DPI</label><input type="number" value={dpi} onChange={(e) => setDpi(e.target.value)} style={{ marginTop: 4, width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)" }} /></div>
-                    <div><label style={{ fontSize: 11, fontWeight: 700 }}>Porta</label><input type="number" value={port} onChange={(e) => setPort(e.target.value)} style={{ marginTop: 4, width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)" }} /></div>
+                    {connection === "network" && <div><label style={{ fontSize: 11, fontWeight: 700 }}>Porta</label><input type="number" value={port} onChange={(e) => setPort(e.target.value)} style={{ marginTop: 4, width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)" }} /></div>}
                   </div>
-                  <div><label style={{ fontSize: 11, fontWeight: 700 }}>IP (opcional — rede)</label><input value={ip} onChange={(e) => setIp(e.target.value)} placeholder="192.168.0.10" style={{ marginTop: 4, width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)" }} /></div>
+                  {connection === "network" && <div><label style={{ fontSize: 11, fontWeight: 700 }}>IP da Zebra</label><input value={ip} onChange={(e) => setIp(e.target.value)} placeholder="192.168.1.100" style={{ marginTop: 4, width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)" }} /></div>}
                   {zplPreview && (
                     <div>
                       <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 4 }}>ZPL gerado — BarTender/driver</div>

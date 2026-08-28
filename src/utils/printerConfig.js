@@ -5,7 +5,7 @@ export function mmToDots(mm, dpi) {
 export const ZEBRA_PRINTERS = {
   ZD220: { manufacturer: "Zebra", model: "ZD220", language: "ZPL", dpi: 203 },
   ZT410: { manufacturer: "Zebra", model: "ZT410", language: "ZPL", dpi: 203 },
-  ZT411: { manufacturer: "Zebra", model: "ZT411", language: "ZPL", dpi: 300 },
+  ZT411: { manufacturer: "Zebra", model: "ZT411", language: "ZPL", dpi: 203 },
 };
 
 export const PRINTER_TYPES = {
