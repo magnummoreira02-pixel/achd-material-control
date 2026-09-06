@@ -1,6 +1,8 @@
+import { useEffect, useRef, useState } from "react";
 import Icon from "./ui/Icon.jsx";
 import Panel from "./ui/Panel.jsx";
 import { normalizeValue } from "../utils/validation.js";
+import { parseToledoWeight, serialIsAvailable } from "../services/toledoScaleService.js";
 
 export default function BuscaMaterial({
   readyToSearch,
@@ -27,8 +29,61 @@ export default function BuscaMaterial({
   onInputKeyDown,
   onClearQuery,
   onRunSearch,
-  onOpenScanner
+  onOpenScanner,
+  onCaptureWeight
 }) {
+  const [scalePort, setScalePort] = useState(null);
+  const [scaleWeight, setScaleWeight] = useState(null);
+  const [scaleStatus, setScaleStatus] = useState("");
+  const [baudRate, setBaudRate] = useState(9600);
+  const readerRef = useRef(null);
+  const portRef = useRef(null);
+
+  const disconnectScale = async () => {
+    try { await readerRef.current?.cancel(); } catch {}
+    try { readerRef.current?.releaseLock(); } catch {}
+    try { await portRef.current?.close(); } catch {}
+    readerRef.current = null;
+    portRef.current = null;
+    setScalePort(null);
+    setScaleStatus("Balança desconectada.");
+  };
+
+  useEffect(() => () => { disconnectScale(); }, []);
+
+  const connectScale = async () => {
+    if (!serialIsAvailable()) {
+      setScaleStatus("Leitura serial disponível apenas no Chrome ou Edge.");
+      return;
+    }
+    try {
+      const port = await navigator.serial.requestPort();
+      await port.open({ baudRate, dataBits: 8, stopBits: 1, parity: "none" });
+      portRef.current = port;
+      setScalePort(port);
+      setScaleStatus("Conectada. Aguardando peso da balança...");
+      const reader = port.readable.getReader();
+      readerRef.current = reader;
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (portRef.current === port) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer = (buffer + decoder.decode(value, { stream: true })).slice(-200);
+        const weight = parseToledoWeight(buffer);
+        if (weight !== null) setScaleWeight(weight);
+      }
+    } catch (error) {
+      setScaleStatus(`Não foi possível conectar à balança: ${error?.message || "erro desconhecido"}`);
+      await disconnectScale();
+    }
+  };
+
+  const captureWeight = () => {
+    if (!matched || scaleWeight === null) return;
+    onCaptureWeight?.(String(matched[idColumn] ?? ""), scaleWeight);
+    setScaleStatus(`Peso de ${scaleWeight.toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg vinculado ao material.`);
+  };
   // borda forte: verde = avanço sim, vermelho = descarte/não selecionado
   const strongBorderColor =
     matchedAvancoStatus === "sim" ? "#22C55E" : matchedAvancoStatus === "nao" ? "#EF4444" : undefined;
@@ -283,6 +338,26 @@ export default function BuscaMaterial({
               })()}
             </tbody>
           </table>
+          <div style={{ padding: "14px 20px", borderTop: "1px solid var(--border)", background: "var(--surface)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <strong style={{ fontSize: 13 }}>Balança Toledo 9094 Plus</strong>
+              {!scalePort ? (
+                <>
+                  <select value={baudRate} onChange={(e) => setBaudRate(Number(e.target.value))} style={{ padding: "7px" }} aria-label="Velocidade serial">
+                    {[1200, 2400, 4800, 9600, 19200].map((rate) => <option key={rate} value={rate}>{rate} baud</option>)}
+                  </select>
+                  <button type="button" onClick={connectScale} style={{ padding: "8px 12px", background: "#2563EB", color: "#fff", border: 0, cursor: "pointer" }}>CONECTAR BALANÇA</button>
+                </>
+              ) : (
+                <button type="button" onClick={disconnectScale} style={{ padding: "8px 12px", background: "transparent", color: "var(--text)", border: "1px solid var(--border-strong)", cursor: "pointer" }}>DESCONECTAR</button>
+              )}
+              <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontWeight: 700, fontSize: 17, color: scaleWeight === null ? "var(--muted)" : "#22C55E" }}>
+                {scaleWeight === null ? "--,--- kg" : `${scaleWeight.toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg`}
+              </span>
+              <button type="button" onClick={captureWeight} disabled={scaleWeight === null} style={{ padding: "8px 12px", background: scaleWeight === null ? "var(--surface-soft)" : "#22C55E", color: scaleWeight === null ? "var(--muted)" : "#fff", border: 0, cursor: scaleWeight === null ? "not-allowed" : "pointer" }}>VINCULAR PESO</button>
+            </div>
+            {scaleStatus && <div style={{ marginTop: 8, fontSize: 12, color: "var(--muted)" }}>{scaleStatus}</div>}
+          </div>
         </div>
       )}
     </Panel>

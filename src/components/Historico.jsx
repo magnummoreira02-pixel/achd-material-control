@@ -51,7 +51,7 @@ export default function Historico({
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
                 <thead>
                   <tr>
-                    {["Nº", "Data", "Hora", "QR Code", "Status"].map((header) => (
+                    {["Nº", "Data", "Hora", "QR Code", "Peso (kg)", "Status"].map((header) => (
                       <th key={header} style={{ textAlign: "left", padding: "8px 10px", borderBottom: "2px solid #22C55E", color: "var(--text)", whiteSpace: "nowrap" }}>{header}</th>
                     ))}
                     {displayColumns.slice(0, 2).map((header) => (
@@ -66,6 +66,7 @@ export default function Historico({
                       <td style={{ padding: "7px 10px", borderBottom: "1px solid var(--border)", whiteSpace: "nowrap", color: "var(--text)" }}>{item.date}</td>
                       <td style={{ padding: "7px 10px", borderBottom: "1px solid var(--border)", whiteSpace: "nowrap", color: "var(--text)" }}>{item.time}</td>
                       <td style={{ padding: "7px 10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono', monospace", color: "var(--text)" }}>{item.code}</td>
+                      <td style={{ padding: "7px 10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono', monospace", color: "var(--text)" }}>{item.weightKg === undefined ? "-" : Number(item.weightKg).toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}</td>
                       <td style={{ padding: "7px 10px", borderBottom: "1px solid var(--border)", fontWeight: 700, whiteSpace: "nowrap", color: item.status === "ENCONTRADO" ? "#22C55E" : "#EF4444" }}>{item.status}</td>
                       {displayColumns.slice(0, 2).map((header) => (
                         <td key={header} style={{ padding: "7px 10px", borderBottom: "1px solid var(--border)", color: "var(--text)" }}>{item.rowData?.[header] || "-"}</td>

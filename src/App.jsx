@@ -653,6 +653,29 @@ const App = () => {
     });
   };
 
+  const attachWeightToMaterial = (code, weightKg) => {
+    const normalizedCode = normalizeValue(code);
+    const targetExists = history.some((item) => normalizeValue(item.code) === normalizedCode);
+    if (!targetExists) {
+      setExportMessage("Bipe o material antes de vincular o peso.");
+      return;
+    }
+    const measuredAt = new Date().toISOString();
+    setHistory((previousHistory) => {
+      let updated = false;
+      const nextHistory = previousHistory.map((item) => {
+        if (!updated && normalizeValue(item.code) === normalizedCode) {
+          updated = true;
+          return { ...item, weightKg, measuredAt };
+        }
+        return item;
+      });
+      storageService.saveHistory(nextHistory);
+      return nextHistory;
+    });
+    setExportMessage(`Peso de ${Number(weightKg).toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg vinculado ao material ${code}.`);
+  };
+
   const addMovement = (action, code, exact, boxNumber = "") => {
     const now = new Date();
     const movement = {
@@ -807,6 +830,7 @@ const App = () => {
   const getExportRows = () => history.slice().reverse().map((item) => ({
     Codigo: item.code,
     Descricao: displayColumns[0] ? item.rowData?.[displayColumns[0]] || "" : "",
+    Peso_kg: item.weightKg ?? "",
     Data: item.date,
     Hora: item.time,
     Usuario: item.user || "",
@@ -1118,6 +1142,7 @@ const App = () => {
           setScannerStatus("");
           setScannerOpen(true);
         }}
+        onCaptureWeight={attachWeightToMaterial}
       />
       )}
 
