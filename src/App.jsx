@@ -676,6 +676,29 @@ const App = () => {
     setExportMessage(`Peso de ${Number(weightKg).toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg vinculado ao material ${code}.`);
   };
 
+  const attachPmsToMaterial = (code, pmsGrams) => {
+    const normalizedCode = normalizeValue(code);
+    const targetExists = history.some((item) => normalizeValue(item.code) === normalizedCode);
+    if (!targetExists) {
+      setExportMessage("Bipe o material antes de vincular o PMS.");
+      return;
+    }
+    const pmsAt = new Date().toISOString();
+    setHistory((previousHistory) => {
+      let updated = false;
+      const nextHistory = previousHistory.map((item) => {
+        if (!updated && normalizeValue(item.code) === normalizedCode) {
+          updated = true;
+          return { ...item, pmsGrams, pmsAt };
+        }
+        return item;
+      });
+      storageService.saveHistory(nextHistory);
+      return nextHistory;
+    });
+    setExportMessage(`PMS de ${Number(pmsGrams).toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} g vinculado ao material ${code}.`);
+  };
+
   const addMovement = (action, code, exact, boxNumber = "") => {
     const now = new Date();
     const movement = {
@@ -827,10 +850,17 @@ const App = () => {
     excelService.exportHistoryWorkbook(history, headers);
   };
 
+  const exportWeighedHistory = () => {
+    if (!excelService.exportWeighedMaterialsWorkbook(history)) {
+      setExportMessage("Não há materiais bipados com peso registrado para exportar.");
+    }
+  };
+
   const getExportRows = () => history.slice().reverse().map((item) => ({
     Codigo: item.code,
     Descricao: displayColumns[0] ? item.rowData?.[displayColumns[0]] || "" : "",
     Peso_kg: item.weightKg ?? "",
+    PMS_g: item.pmsGrams ?? "",
     Data: item.date,
     Hora: item.time,
     Usuario: item.user || "",
@@ -1143,6 +1173,7 @@ const App = () => {
           setScannerOpen(true);
         }}
         onCaptureWeight={attachWeightToMaterial}
+        onCapturePms={attachPmsToMaterial}
       />
       )}
 
@@ -1157,6 +1188,7 @@ const App = () => {
                 foundMaterialsCount={foundMaterialsCount}
                 displayColumns={displayColumns}
                 onExportHistory={exportHistory}
+                onExportWeighedHistory={exportWeighedHistory}
                 onClearHistory={clearHistory}
                 onSaveHistory={saveLocalHistory}
                 onExportBackup={exportFullBackup}

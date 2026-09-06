@@ -30,12 +30,15 @@ export default function BuscaMaterial({
   onClearQuery,
   onRunSearch,
   onOpenScanner,
-  onCaptureWeight
+  onCaptureWeight,
+  onCapturePms
 }) {
   const [scalePort, setScalePort] = useState(null);
   const [scaleWeight, setScaleWeight] = useState(null);
   const [scaleStatus, setScaleStatus] = useState("");
   const [baudRate, setBaudRate] = useState(9600);
+  const [manualWeight, setManualWeight] = useState("");
+  const [manualPms, setManualPms] = useState("");
   const readerRef = useRef(null);
   const portRef = useRef(null);
 
@@ -79,10 +82,20 @@ export default function BuscaMaterial({
     }
   };
 
-  const captureWeight = () => {
-    if (!matched || scaleWeight === null) return;
-    onCaptureWeight?.(String(matched[idColumn] ?? ""), scaleWeight);
-    setScaleStatus(`Peso de ${scaleWeight.toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg vinculado ao material.`);
+  const captureWeight = (weight = scaleWeight) => {
+    if (!matched || weight === null || !Number.isFinite(Number(weight)) || Number(weight) < 0) return;
+    const weightKg = Number(weight);
+    onCaptureWeight?.(String(matched[idColumn] ?? ""), weightKg);
+    setScaleStatus(`Peso de ${weightKg.toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg vinculado ao material.`);
+    setManualWeight("");
+  };
+
+  const capturePms = () => {
+    const value = Number(manualPms.replace(",", "."));
+    if (!matched || !Number.isFinite(value) || value < 0) return;
+    onCapturePms?.(String(matched[idColumn] ?? ""), value);
+    setScaleStatus(`PMS de ${value.toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} g vinculado ao material.`);
+    setManualPms("");
   };
   // borda forte: verde = avanço sim, vermelho = descarte/não selecionado
   const strongBorderColor =
@@ -154,6 +167,46 @@ export default function BuscaMaterial({
             <Icon name="search" size={16} /> BUSCAR
           </button>
         </div>
+      </div>
+
+      <div style={{ marginTop: 12, padding: "12px 16px", border: "1px solid var(--border)", borderRadius: 10, background: "var(--surface)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <strong style={{ fontSize: 13 }}>Balança Toledo 9094 Plus</strong>
+          {!scalePort ? (
+            <>
+              <select value={baudRate} onChange={(e) => setBaudRate(Number(e.target.value))} style={{ padding: "7px" }} aria-label="Velocidade serial">
+                {[1200, 2400, 4800, 9600, 19200].map((rate) => <option key={rate} value={rate}>{rate} baud</option>)}
+              </select>
+              <button type="button" onClick={connectScale} style={{ padding: "8px 12px", background: "#2563EB", color: "#fff", border: 0, cursor: "pointer" }}>CONECTAR BALANÇA</button>
+            </>
+          ) : (
+            <button type="button" onClick={disconnectScale} style={{ padding: "8px 12px", background: "transparent", color: "var(--text)", border: "1px solid var(--border-strong)", cursor: "pointer" }}>DESCONECTAR</button>
+          )}
+          <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontWeight: 700, fontSize: 17, color: scaleWeight === null ? "var(--muted)" : "#22C55E" }}>
+            {scaleWeight === null ? "--,--- kg" : `${scaleWeight.toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg`}
+          </span>
+          <input
+            type="number"
+            min="0"
+            step="0.001"
+            value={manualWeight}
+            onChange={(e) => setManualWeight(e.target.value)}
+            placeholder="Peso manual (kg)"
+            style={{ width: 150, padding: "8px" }}
+          />
+          <button type="button" onClick={() => captureWeight(manualWeight.replace(",", "."))} disabled={!matched || !manualWeight.trim()} style={{ padding: "8px 12px", background: matched && manualWeight.trim() ? "#EAB308" : "var(--surface-soft)", color: matched && manualWeight.trim() ? "#111827" : "var(--muted)", border: 0, cursor: matched && manualWeight.trim() ? "pointer" : "not-allowed" }}>USAR PESO MANUAL</button>
+          <input
+            type="number"
+            min="0"
+            step="0.001"
+            value={manualPms}
+            onChange={(e) => setManualPms(e.target.value)}
+            placeholder="PMS (g)"
+            style={{ width: 120, padding: "8px" }}
+          />
+          <button type="button" onClick={capturePms} disabled={!matched || !manualPms.trim()} style={{ padding: "8px 12px", background: matched && manualPms.trim() ? "#A78BFA" : "var(--surface-soft)", color: matched && manualPms.trim() ? "#111827" : "var(--muted)", border: 0, cursor: matched && manualPms.trim() ? "pointer" : "not-allowed" }}>VINCULAR PMS</button>
+        </div>
+        {scaleStatus && <div style={{ marginTop: 8, fontSize: 12, color: "var(--muted)" }}>{scaleStatus}</div>}
       </div>
 
       {suggestions.length > 0 && (
@@ -340,23 +393,8 @@ export default function BuscaMaterial({
           </table>
           <div style={{ padding: "14px 20px", borderTop: "1px solid var(--border)", background: "var(--surface)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              <strong style={{ fontSize: 13 }}>Balança Toledo 9094 Plus</strong>
-              {!scalePort ? (
-                <>
-                  <select value={baudRate} onChange={(e) => setBaudRate(Number(e.target.value))} style={{ padding: "7px" }} aria-label="Velocidade serial">
-                    {[1200, 2400, 4800, 9600, 19200].map((rate) => <option key={rate} value={rate}>{rate} baud</option>)}
-                  </select>
-                  <button type="button" onClick={connectScale} style={{ padding: "8px 12px", background: "#2563EB", color: "#fff", border: 0, cursor: "pointer" }}>CONECTAR BALANÇA</button>
-                </>
-              ) : (
-                <button type="button" onClick={disconnectScale} style={{ padding: "8px 12px", background: "transparent", color: "var(--text)", border: "1px solid var(--border-strong)", cursor: "pointer" }}>DESCONECTAR</button>
-              )}
-              <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontWeight: 700, fontSize: 17, color: scaleWeight === null ? "var(--muted)" : "#22C55E" }}>
-                {scaleWeight === null ? "--,--- kg" : `${scaleWeight.toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg`}
-              </span>
               <button type="button" onClick={captureWeight} disabled={scaleWeight === null} style={{ padding: "8px 12px", background: scaleWeight === null ? "var(--surface-soft)" : "#22C55E", color: scaleWeight === null ? "var(--muted)" : "#fff", border: 0, cursor: scaleWeight === null ? "not-allowed" : "pointer" }}>VINCULAR PESO</button>
             </div>
-            {scaleStatus && <div style={{ marginTop: 8, fontSize: 12, color: "var(--muted)" }}>{scaleStatus}</div>}
           </div>
         </div>
       )}

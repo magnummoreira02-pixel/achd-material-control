@@ -147,6 +147,8 @@ export function exportHistoryWorkbook(history, headers) {
   const rowsToExport = history.map((item) => ({
     Numero: item.number,
     Codigo: item.code,
+    Peso_kg: item.weightKg ?? "",
+    PMS_g: item.pmsGrams ?? "",
     Status: item.status,
     Planilha: item.sheetName || "",
     Data: item.date,
@@ -159,6 +161,30 @@ export function exportHistoryWorkbook(history, headers) {
     }),
     getExportFileName("xlsx", "Historico_Leituras")
   );
+}
+
+export function exportWeighedMaterialsWorkbook(history = []) {
+  const rowsToExport = history
+    .filter((item) => item.status === "ENCONTRADO" && item.weightKg !== undefined && item.weightKg !== null && item.weightKg !== "")
+    .map((item) => ({
+      Numero: item.number,
+      Codigo: item.code,
+      Peso_kg: item.weightKg,
+      PMS_g: item.pmsGrams ?? "",
+      Data_bipagem: item.date,
+      Hora_bipagem: item.time,
+      Data_hora_pesagem: item.measuredAt ? new Date(item.measuredAt).toLocaleString("pt-BR") : "",
+      Planilha: item.sheetName || ""
+    }));
+  if (!rowsToExport.length) return false;
+  const workbook = buildHistoryBlob(rowsToExport, "xlsx");
+  downloadBlob(
+    new Blob([XLSX.write(workbook, { bookType: "xlsx", type: "array" })], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    }),
+    getExportFileName("xlsx", "Materiais_Bipados_Com_Peso")
+  );
+  return true;
 }
 
 export function buildBoxRows(box) {

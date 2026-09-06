@@ -6,6 +6,7 @@ export default function Historico({
   foundMaterialsCount,
   displayColumns = [],
   onExportHistory,
+  onExportWeighedHistory,
   onClearHistory,
   onSaveHistory,
   onExportBackup,
@@ -30,6 +31,7 @@ export default function Historico({
             </div>
           )}
           <button type="button" onClick={onExportHistory} disabled={!history.length} style={{ padding: "8px 14px", background: history.length ? "#22C55E" : "transparent", border: `1px solid ${history.length ? "#22C55E" : "var(--border-strong)"}`, color: history.length ? "#fff" : "var(--muted)", cursor: history.length ? "pointer" : "not-allowed", fontSize: 12 }}>EXPORTAR</button>
+          <button type="button" onClick={onExportWeighedHistory} disabled={!history.some((item) => item.status === "ENCONTRADO" && item.weightKg !== undefined && item.weightKg !== null && item.weightKg !== "")} style={{ padding: "8px 14px", background: history.some((item) => item.status === "ENCONTRADO" && item.weightKg !== undefined && item.weightKg !== null && item.weightKg !== "") ? "#EAB308" : "transparent", border: "1px solid #EAB308", color: history.some((item) => item.status === "ENCONTRADO" && item.weightKg !== undefined && item.weightKg !== null && item.weightKg !== "") ? "#111827" : "var(--muted)", cursor: history.some((item) => item.status === "ENCONTRADO" && item.weightKg !== undefined && item.weightKg !== null && item.weightKg !== "") ? "pointer" : "not-allowed", fontSize: 12 }}>EXPORTAR BIPADOS + PESOS</button>
           <button type="button" onClick={onClearHistory} disabled={!history.length} style={{ padding: "8px 14px", background: "transparent", border: `1px solid ${history.length ? "#EF4444" : "var(--border-strong)"}`, color: history.length ? "#EF4444" : "var(--muted)", cursor: history.length ? "pointer" : "not-allowed", fontSize: 12 }}>LIMPAR</button>
           {history.length > 10 && (
             <button type="button" onClick={onToggleFullHistory} style={{ padding: "8px 14px", background: "transparent", border: "1px solid var(--border-strong)", color: "var(--text)", cursor: "pointer", fontSize: 12 }}>
@@ -51,7 +53,7 @@ export default function Historico({
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
                 <thead>
                   <tr>
-                    {["Nº", "Data", "Hora", "QR Code", "Peso (kg)", "Status"].map((header) => (
+                    {["Nº", "Data", "Hora", "QR Code", "Peso (kg)", "PMS (g)", "Status"].map((header) => (
                       <th key={header} style={{ textAlign: "left", padding: "8px 10px", borderBottom: "2px solid #22C55E", color: "var(--text)", whiteSpace: "nowrap" }}>{header}</th>
                     ))}
                     {displayColumns.slice(0, 2).map((header) => (
@@ -67,6 +69,7 @@ export default function Historico({
                       <td style={{ padding: "7px 10px", borderBottom: "1px solid var(--border)", whiteSpace: "nowrap", color: "var(--text)" }}>{item.time}</td>
                       <td style={{ padding: "7px 10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono', monospace", color: "var(--text)" }}>{item.code}</td>
                       <td style={{ padding: "7px 10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono', monospace", color: "var(--text)" }}>{item.weightKg === undefined ? "-" : Number(item.weightKg).toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}</td>
+                      <td style={{ padding: "7px 10px", borderBottom: "1px solid var(--border)", fontFamily: "'IBM Plex Mono', monospace", color: "var(--text)" }}>{item.pmsGrams === undefined ? "-" : Number(item.pmsGrams).toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}</td>
                       <td style={{ padding: "7px 10px", borderBottom: "1px solid var(--border)", fontWeight: 700, whiteSpace: "nowrap", color: item.status === "ENCONTRADO" ? "#22C55E" : "#EF4444" }}>{item.status}</td>
                       {displayColumns.slice(0, 2).map((header) => (
                         <td key={header} style={{ padding: "7px 10px", borderBottom: "1px solid var(--border)", color: "var(--text)" }}>{item.rowData?.[header] || "-"}</td>
