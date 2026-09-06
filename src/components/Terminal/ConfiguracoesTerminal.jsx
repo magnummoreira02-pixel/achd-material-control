@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import Icon from "./../../../src/components/ui/Icon.jsx";
-import { getTemplates, saveTemplate, getActiveTemplateId, setActiveTemplate, getActiveTemplate, TemplateType, DefaultDimensions } from "../../../src/services/labelTemplateService.js";
+import { getTemplates, getTemplate, saveTemplate, updateTemplate, deleteTemplate, getActiveTemplateId, setActiveTemplate as persistActiveTemplate, TemplateType, DefaultDimensions } from "../../../src/services/labelTemplateService.js";
 
 const CONFIRM_DELETE = "Deseja realmente excluir este modelo?";
 const CONFIRM_OVERWRITE = "Já existe um modelo com este nome. Deseja substituí-lo?";
@@ -10,6 +10,7 @@ export default function ConfiguracoesTerminal() {
   const [activeTemplateId, setActiveTemplateId] = useState(null);
   const [activeTemplate, setActiveTemplate] = useState(null);
   const [editingTemplateId, setEditingTemplateId] = useState(null);
+  const [editingTemplateName, setEditingTemplateName] = useState(null);
   const [newTemplateName, setNewTemplateName] = useState("");
   const [showNewTemplateDialog, setShowNewTemplateDialog] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -33,7 +34,7 @@ export default function ConfiguracoesTerminal() {
     if (!activeTemplateId && all.length > 0) {
       const firstId = all[0].id;
       setActiveTemplateId(firstId);
-      await setActiveTemplateId(firstId);
+      await persistActiveTemplate(firstId);
     }
   }
 
@@ -81,7 +82,8 @@ export default function ConfiguracoesTerminal() {
       setNewTemplateName("");
       setShowNewTemplateDialog(false);
       // Set as active
-      await setActiveTemplateId(novo.id);
+      setActiveTemplateId(novo.id);
+      await persistActiveTemplate(novo.id);
     }
   }
 
@@ -132,6 +134,7 @@ export default function ConfiguracoesTerminal() {
     if (activeTemplateId === selectedTemplateForDelete.id) {
       setActiveTemplateId(null);
       setActiveTemplate(null);
+      await persistActiveTemplate(null);
     }
     setShowDeleteConfirm(false);
     setSelectedTemplateForDelete(null);
@@ -182,7 +185,8 @@ export default function ConfiguracoesTerminal() {
           setTemplates((prev) => [...prev, imported]);
           // Set as active if no active template
           if (!activeTemplateId) {
-            await setActiveTemplateId(imported.id);
+            setActiveTemplateId(imported.id);
+            await persistActiveTemplate(imported.id);
           }
         } catch (err) {
           alert("Erro ao ler arquivo JSON: " + err.message);

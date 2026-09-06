@@ -175,19 +175,20 @@ export default function EditorEtiqueta({ match, ...props }) {
     "rep",
     "bookName",
   ];
+  const elementoSelecionado = elementos.find((elemento) => elemento.id === selectedElementId);
 
   return (
     <div className="editor-etiqueta-shell">
       <div className="editor-etiqueta-topo">
         <h2>
           {template ? `Editor: ${template.nome}` : "Editor de Etiqueta"} 
-          <Icon name="{" size={16} style={{ marginLeft: "4px" }} />}
+          <Icon name="edit" size={16} style={{ marginLeft: "4px" }} />
         </h2>
         <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
           <span style={{ fontSize: "12px", color: "#64748b" }}>
             {larguraMM}x{alturaMM}mm
           </span>
-          <Icon name="resize" size={12} style={{ cursor: "pointer", color: "#22C55E" }} onClick={() => alert("Redimensionamento via preview ao vivo") />}
+          <Icon name="resize" size={12} style={{ cursor: "pointer", color: "#22C55E" }} onClick={() => alert("Redimensionamento via preview ao vivo")} />
         </div>
         <button
           className="terminal-btn-secondary"
@@ -215,15 +216,11 @@ export default function EditorEtiqueta({ match, ...props }) {
       {/* Left panel: Element properties and add form */}
       <div className="editor-etiqueta-panel-esquerdo">
         {/* Selected element properties */}
-        {selectedElementId !== null && template && template.elementos.length > 0
+        {elementoSelecionado
           ? (
             <div className="element-prop-box">
               <h3>Propriedades do Elemento</h3>
-              const el = template.elementos.find((e) => e.id === selectedElementId);
-              if (!el) return null;
-
-              return (
-                <div>
+              <div>
                   <p style={{ fontSize: "11px", color: "#64748b", marginBottom: "8px" }}>Tipo:</p>
                   <select
                     style={{
@@ -236,11 +233,11 @@ export default function EditorEtiqueta({ match, ...props }) {
                       border: "1px solid var(--border)",
                     }}
                     onChange={(e) => {
-                      const tipo = e.target.value as any;
+                      const tipo = e.target.value;
                       setElementos((prev) =>
                         prev.map((e) =>
                           e.id === selectedElementId
-                            ? { ...e, tipo: tipo as any }
+                            ? { ...e, tipo }
                             : e
                         )
                       );
@@ -253,10 +250,14 @@ export default function EditorEtiqueta({ match, ...props }) {
                     <option value={TemplateType.RANGE}>Range</option>
                     <option value={TemplateType.SERPENTINE}>Serpentine</option>
                   </select>
-                  <p style={{ fontSize: "11px", color: "#64748b", marginBottom: "8px" }}>
-                    Alinhamento:
+                  <p style={{ fontSize: "11px", color: "#64748b", marginBottom: "8px" }}>Alinhamento:</p>
+                  <select
+                    value={elementoSelecionado.alinhamento || "esq"}
+                    onChange={(e) => setElementos((prev) => prev.map((item) => item.id === selectedElementId ? { ...item, alinhamento: e.target.value } : item))}
+                    style={{ width: "100%", padding: "6px", marginBottom: "8px" }}
+                  >
+                    {ALIGNMENTS.map((alignment) => <option key={alignment} value={alignment}>{alignment}</option>)}
                   </select>
-                  {/* Alignment select would go here - simplified */}
                   <p style={{ fontSize: "11px", color: "#64748b", marginBottom: "8px" }}>
                     Fonte (mm):
                   </p>
@@ -264,7 +265,7 @@ export default function EditorEtiqueta({ match, ...props }) {
                     type="number"
                     min="1"
                     step="0.1"
-                    value el.fonteMm || 3
+                    value={elementoSelecionado.fonteMm || 3}
                     onChange={(e) =>
                       setElementos(
                         prev =>
@@ -283,7 +284,7 @@ export default function EditorEtiqueta({ match, ...props }) {
                   <label style={{ display: "flex", gap: "4px" }}>
                     <input
                       type="checkbox"
-                      checked={el.negrito}
+                      checked={elementoSelecionado.negrito}
                       onChange={(e) =>
                         setElementos(
                           prev =>
@@ -301,7 +302,7 @@ export default function EditorEtiqueta({ match, ...props }) {
                   <label>
                     <input
                       type="checkbox"
-                      checked={!el.negrito}
+                      checked={!elementoSelecionado.negrito}
                       onChange={(e) =>
                         setElementos(
                           prev =>
@@ -316,8 +317,7 @@ export default function EditorEtiqueta({ match, ...props }) {
                     />
                     Não
                   </label>
-                </div>
-              );
+              </div>
             </div>
           )
           : null}
@@ -335,7 +335,7 @@ export default function EditorEtiqueta({ match, ...props }) {
               color: "#e8f0eb",
               border: "1px solid var(--border)",
             }}
-            onChange={(e) => setNovoElementoTipo(e.target.value as any)}
+            onChange={(e) => setNovoElementoTipo(e.target.value)}
           >
             <option value={TemplateType.TEXTO}>Texto fixo</option>
             <option value={TemplateType.CAMPO}>Campo da planilha</option>
@@ -404,14 +404,14 @@ export default function EditorEtiqueta({ match, ...props }) {
       {/* Right panel: Live preview canvas (simplified SVG preview) */}
       <div className="editor-etiqueta-preview">
         <h3>Prévia da Etiqueta {larguraMM}x{alturaMM}mm</h3>
-        {template && template.elementos.length > 0 ? (
+        {elementos.length > 0 ? (
           <svg
             width={larguraMM * 3.78} // approximate px conversion at 96dpi
             height={alturaMM * 3.78}
             style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "4px" }}
-            viewBox="0 0 {larguraMM} {alturaMM}"
+            viewBox={`0 0 ${larguraMM} ${alturaMM}`}
           >
-            {template.elementos.map((el, i) => {
+            {elementos.map((el, i) => {
               const { tipo, x, y, w, h, fonteMm, negrito, alinhamento, rotacao, textoFixo, colunaOrigem, prefixo } = el;
               // Calculate box position and size
               const pxX = x;
@@ -444,8 +444,8 @@ export default function EditorEtiqueta({ match, ...props }) {
               }
 
               return (
-                <rect
-                  key={i}
+                <React.Fragment key={el.id || i}>
+                  <rect
                   x={pxX}
                   y={pxY}
                   width={pxW || 20}
@@ -459,11 +459,12 @@ export default function EditorEtiqueta({ match, ...props }) {
                   y={pxY + (fonteMm || 3) * 0.4 + 5}
                   fill="#e8f0eb"
                   fontSize={fonteMm || 3}
-                  style={negrito ? "font-weight:bold;" : ""}
+                  style={negrito ? { fontWeight: "bold" } : undefined}
                   textAnchor={alinhamento || "start"}
                 >
                   {content}
-                </text>
+                  </text>
+                </React.Fragment>
               );
             })}
           </svg>

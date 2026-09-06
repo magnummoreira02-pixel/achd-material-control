@@ -243,7 +243,7 @@ export default function Bipagem({ ...props }) {
             >
               Limpar
             </button>
-          )}
+          </div>
         )}
 
         {/* Multiple results selection */}
@@ -263,7 +263,7 @@ export default function Bipagem({ ...props }) {
                     borderRadius: "4px",
                     cursor: "pointer",
                     border: "1px solid transparent",
-                  }
+                  }}
                   onClick={() => {
                     // Select first result and process
                     const mat = resultado.dados.find((m2) => m2.id === m.id);
@@ -336,7 +336,7 @@ export default function Bipagem({ ...props }) {
                             ? "var(--danger)"
                             : "var(--accent)"
                         }`,
-                    }
+                    }}
                   >
                     <p style={{ fontSize: "10px", margin: "0 0 2px 0", fontWeight: "bold" }}>
                       {statusText}

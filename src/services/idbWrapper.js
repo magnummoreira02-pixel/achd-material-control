@@ -5,7 +5,7 @@
 //         await store.add(value);
 //         await tx.done
 
-export function idbPromise() {
+export function createIdbPromise() {
   // Minimal IDB wrapper - returns a promise that resolves with the db instance
   // This is a simplified version; for production, consider using the full 'idb' library
   let dbPromise = null;
