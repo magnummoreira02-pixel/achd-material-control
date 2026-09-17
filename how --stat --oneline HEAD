@@ -1,0 +1,7 @@
+[33m299fdce[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Ajuste na conexão da balança Toledo 9094 Plus
+ h                                 | 10 [32m+++++[m
+ how --name-only --oneline ce41e34 |  6 [32m+++[m
+ src/App.jsx                       | 84 [32m++++++++++++++++++++++++++++++++++++++[m[31m-[m
+ src/components/BuscaMaterial.jsx  | 33 [32m+++++++++++++[m[31m--[m
+ src/services/excelService.js      | 41 [32m+++++++++++++++++++[m
+ 5 files changed, 169 insertions(+), 5 deletions(-)
