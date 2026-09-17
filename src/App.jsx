@@ -217,6 +217,16 @@ const App = () => {
   useEffect(() => { estoqueDataRef.current = boxes.map((b) => ({ numero: b.number, descricao: b.description, itens: (b.materials||[]).length, status: b.status })); dirtyRef.current = true; }, [boxes]);
   useAutoSaveInventory(estoqueDataRef, dirtyRef);
 
+  // Balança + auto-exportação: peso da Toledo é elevado para o App para que o bip
+  // capture automaticamente e o arquivo de exportação seja atualizado sem ação manual.
+  const [scaleWeight, setScaleWeight] = useState(null);
+  const scaleWeightRef = useRef(null);
+  useEffect(() => { scaleWeightRef.current = scaleWeight; }, [scaleWeight]);
+  const [exportDirHandle, setExportDirHandle] = useState(null);
+  const exportDirHandleRef = useRef(null);
+  useEffect(() => { exportDirHandleRef.current = exportDirHandle; }, [exportDirHandle]);
+  const [autoExportEnabled, setAutoExportEnabled] = useState(false);
+
   // Effects for persistent storage
   useEffect(() => {
     storageService.saveBoxes(boxes);
@@ -633,6 +643,10 @@ const App = () => {
         }), {})
       : {};
     const status = exact ? "ENCONTRADO" : "NÃO ENCONTRADO";
+    // Captura automática do peso da balança no momento da bipagem
+    const autoWeight = scaleWeightRef.current;
+    const hasAutoWeight = autoWeight !== null && Number.isFinite(Number(autoWeight)) && Number(autoWeight) >= 0;
+    const measuredAt = hasAutoWeight ? new Date().toISOString() : undefined;
     setHistory((previousHistory) => {
       const nextNumber = previousHistory.reduce(
         (highest, item) => Math.max(highest, Number(item.number) || 0),
@@ -645,10 +659,21 @@ const App = () => {
         code,
         status,
         sheetName: exact?.__sheetName || "",
-        rowData
+        rowData,
+        ...(hasAutoWeight ? { weightKg: Number(autoWeight), measuredAt } : {})
       };
       const nextHistory = [record, ...previousHistory];
       storageService.saveHistory(nextHistory);
+      // Atualiza arquivo de exportação automaticamente se pasta já foi escolhida
+      if (hasAutoWeight && autoExportEnabled && exportDirHandleRef.current) {
+        // fire-and-forget, não bloqueia UI
+        excelService.writeHistoryAutoExportToDirectory(exportDirHandleRef.current, nextHistory, displayColumns, boxIndexByCode).then((ok) => {
+          if (ok) setExportMessage(`Peso ${Number(autoWeight).toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg capturado e arquivo atualizado automaticamente.`);
+        });
+      } else if (hasAutoWeight && !exportDirHandleRef.current) {
+        // sem pasta, ainda vincula peso mas avisa que pode configurar auto-export
+        setTimeout(() => setExportMessage(`Peso ${Number(autoWeight).toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg vinculado ao material ${code}. Configure a pasta de exportação para atualização automática.`), 0);
+      }
       return nextHistory;
     });
   };
@@ -671,9 +696,16 @@ const App = () => {
         return item;
       });
       storageService.saveHistory(nextHistory);
+      if (autoExportEnabled && exportDirHandleRef.current) {
+        excelService.writeHistoryAutoExportToDirectory(exportDirHandleRef.current, nextHistory, displayColumns, boxIndexByCode).then((ok) => {
+          if (ok) setExportMessage(`Peso de ${Number(weightKg).toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg vinculado e arquivo atualizado.`);
+        });
+      }
       return nextHistory;
     });
-    setExportMessage(`Peso de ${Number(weightKg).toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg vinculado ao material ${code}.`);
+    if (!autoExportEnabled || !exportDirHandleRef.current) {
+      setExportMessage(`Peso de ${Number(weightKg).toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg vinculado ao material ${code}.`);
+    }
   };
 
   const attachPmsToMaterial = (code, pmsGrams) => {
@@ -694,9 +726,51 @@ const App = () => {
         return item;
       });
       storageService.saveHistory(nextHistory);
+      if (autoExportEnabled && exportDirHandleRef.current) {
+        excelService.writeHistoryAutoExportToDirectory(exportDirHandleRef.current, nextHistory, displayColumns, boxIndexByCode);
+      }
       return nextHistory;
     });
     setExportMessage(`PMS de ${Number(pmsGrams).toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} g vinculado ao material ${code}.`);
+  };
+
+  const handleSelectExportDirectory = async () => {
+    if (!window.showDirectoryPicker) {
+      setExportMessage("Seu navegador não suporta seleção de pasta. Use Chrome/Edge para auto-exportação.");
+      return;
+    }
+    try {
+      const dirHandle = await window.showDirectoryPicker({ mode: "readwrite" });
+      // verifica permissão
+      if (dirHandle.requestPermission) {
+        const perm = await dirHandle.requestPermission({ mode: "readwrite" });
+        if (perm !== "granted") {
+          setExportMessage("Permissão negada para a pasta selecionada.");
+          return;
+        }
+      }
+      setExportDirHandle(dirHandle);
+      setAutoExportEnabled(true);
+      // grava imediatamente o estado atual
+      if (history.length) {
+        const ok = await excelService.writeHistoryAutoExportToDirectory(dirHandle, history, displayColumns, boxIndexByCode);
+        setExportMessage(ok ? `Pasta de exportação configurada. Arquivo ${excelService.AUTO_EXPORT_FILE} criado/atualizado.` : "Pasta configurada, mas falha ao gravar arquivo inicial.");
+      } else {
+        setExportMessage(`Pasta de exportação configurada. O arquivo ${excelService.AUTO_EXPORT_FILE} será criado/atualizado a cada bipagem com peso.`);
+      }
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+      setExportMessage(`Não foi possível configurar a pasta: ${error?.message || "erro desconhecido"}`);
+    }
+  };
+
+  const handleToggleAutoExport = () => {
+    if (!exportDirHandle) {
+      handleSelectExportDirectory();
+      return;
+    }
+    setAutoExportEnabled((prev) => !prev);
+    setExportMessage((prev) => !autoExportEnabled ? "Auto-atualização do arquivo de exportação ativada." : "Auto-atualização pausada.");
   };
 
   const addMovement = (action, code, exact, boxNumber = "") => {
@@ -1164,6 +1238,12 @@ const App = () => {
         lastProcessedCode={lastProcessedCode}
         searchInputRef={searchInputRef}
         codeColorRules={codeColorRules}
+        scaleWeight={scaleWeight}
+        onScaleWeightChange={setScaleWeight}
+        autoExportEnabled={autoExportEnabled}
+        exportDirConfigured={Boolean(exportDirHandle)}
+        onSelectExportDirectory={handleSelectExportDirectory}
+        onToggleAutoExport={handleToggleAutoExport}
         onQueryChange={setQuery}
         onInputKeyDown={onInputKeyDown}
         onClearQuery={onClearQuery}

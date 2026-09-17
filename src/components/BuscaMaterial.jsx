@@ -31,10 +31,24 @@ export default function BuscaMaterial({
   onRunSearch,
   onOpenScanner,
   onCaptureWeight,
-  onCapturePms
+  onCapturePms,
+  scaleWeight: scaleWeightProp = null,
+  onScaleWeightChange,
+  autoExportEnabled = false,
+  exportDirConfigured = false,
+  onSelectExportDirectory,
+  onToggleAutoExport
 }) {
   const [scalePort, setScalePort] = useState(null);
-  const [scaleWeight, setScaleWeight] = useState(null);
+  // scaleWeight é controlado pelo App.jsx para permitir captura automática ao bipar
+  const scaleWeight = scaleWeightProp;
+  const setScaleWeight = (value) => {
+    if (typeof value === "function") {
+      onScaleWeightChange?.(value(scaleWeightProp));
+    } else {
+      onScaleWeightChange?.(value);
+    }
+  };
   const [scaleStatus, setScaleStatus] = useState("");
   const [baudRate, setBaudRate] = useState(9600);
   const [manualWeight, setManualWeight] = useState("");
@@ -74,7 +88,7 @@ export default function BuscaMaterial({
         if (done) break;
         buffer = (buffer + decoder.decode(value, { stream: true })).slice(-200);
         const weight = parseToledoWeight(buffer);
-        if (weight !== null) setScaleWeight(weight);
+        if (weight !== null) onScaleWeightChange?.(weight);
       }
     } catch (error) {
       setScaleStatus(`Não foi possível conectar à balança: ${error?.message || "erro desconhecido"}`);
@@ -185,6 +199,7 @@ export default function BuscaMaterial({
           <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontWeight: 700, fontSize: 17, color: scaleWeight === null ? "var(--muted)" : "#22C55E" }}>
             {scaleWeight === null ? "--,--- kg" : `${scaleWeight.toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg`}
           </span>
+          <span style={{ fontSize: 11, color: "var(--muted)", fontStyle: "italic" }}>{scaleWeight !== null ? "captura automática ao bipar" : ""}</span>
           <input
             type="number"
             min="0"
@@ -205,6 +220,18 @@ export default function BuscaMaterial({
             style={{ width: 120, padding: "8px" }}
           />
           <button type="button" onClick={capturePms} disabled={!matched || !manualPms.trim()} style={{ padding: "8px 12px", background: matched && manualPms.trim() ? "#A78BFA" : "var(--surface-soft)", color: matched && manualPms.trim() ? "#111827" : "var(--muted)", border: 0, cursor: matched && manualPms.trim() ? "pointer" : "not-allowed" }}>VINCULAR PMS</button>
+        </div>
+        <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <strong style={{ fontSize: 11, color: "var(--muted)" }}>Arquivo de exportação:</strong>
+          <button type="button" onClick={onSelectExportDirectory} style={{ padding: "6px 10px", background: exportDirConfigured ? "#22C55E" : "#2563EB", color: "#fff", border: 0, cursor: "pointer", fontSize: 11 }}>
+            {exportDirConfigured ? "✓ PASTA CONFIGURADA" : "ESCOLHER PASTA"}
+          </button>
+          {exportDirConfigured && (
+            <button type="button" onClick={onToggleAutoExport} style={{ padding: "6px 10px", background: autoExportEnabled ? "#22C55E" : "var(--surface-soft)", color: autoExportEnabled ? "#fff" : "var(--muted)", border: `1px solid ${autoExportEnabled ? "#22C55E" : "var(--border-strong)"}`, cursor: "pointer", fontSize: 11 }}>
+              {autoExportEnabled ? "AUTO-ATUALIZAÇÃO ON" : "AUTO-ATUALIZAÇÃO OFF"}
+            </button>
+          )}
+          <span style={{ fontSize: 11, color: "var(--muted)" }}>{autoExportEnabled && exportDirConfigured ? "Atualiza Historico_Bipagens_Com_Peso.xlsx a cada bipagem com peso." : exportDirConfigured ? "Auto-atualização pausada." : "Selecione a pasta para atualizar automaticamente ao bipar."}</span>
         </div>
         {scaleStatus && <div style={{ marginTop: 8, fontSize: 12, color: "var(--muted)" }}>{scaleStatus}</div>}
       </div>

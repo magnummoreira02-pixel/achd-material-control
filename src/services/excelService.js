@@ -518,3 +518,44 @@ export async function writeConferenciaProgressToDirectory(dirHandle, { statusRow
     return false;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Auto-exportação do histórico com peso (usado ao bipar com balança conectada)
+// ---------------------------------------------------------------------------
+
+const AUTO_EXPORT_FILE = "Historico_Bipagens_Com_Peso.xlsx";
+
+function buildAutoExportRows(history = [], displayColumns = [], boxIndexByCode) {
+  return [...history].slice().reverse().map((item) => ({
+    Numero: item.number,
+    Codigo: item.code,
+    Peso_kg: item.weightKg ?? "",
+    PMS_g: item.pmsGrams ?? "",
+    Data_bipagem: item.date,
+    Hora_bipagem: item.time,
+    Data_hora_pesagem: item.measuredAt ? new Date(item.measuredAt).toLocaleString("pt-BR") : "",
+    Status: item.status,
+    Planilha: item.sheetName || "",
+    Caixa: boxIndexByCode ? (boxIndexByCode.get(normalizeValue(item.code))?.number || "") : "",
+    ...(displayColumns[0] ? { Descricao: item.rowData?.[displayColumns[0]] || "" } : {}),
+  }));
+}
+
+export async function writeHistoryAutoExportToDirectory(dirHandle, history = [], displayColumns = [], boxIndexByCode) {
+  if (!dirHandle || !history.length) return false;
+  try {
+    const rowsToExport = buildAutoExportRows(history, displayColumns, boxIndexByCode);
+    const workbook = buildHistoryBlob(rowsToExport, "xlsx");
+    const blob = new Blob([XLSX.write(workbook, { bookType: "xlsx", type: "array" })], { type: MIME_XLSX });
+    const fileHandle = await dirHandle.getFileHandle(AUTO_EXPORT_FILE, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    return true;
+  } catch (error) {
+    console.warn("Falha ao gravar histórico com peso na pasta.", error);
+    return false;
+  }
+}
+
+export { AUTO_EXPORT_FILE };
