@@ -1,6 +1,0 @@
-[33mce41e34[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m opção de inserir peso e pms manual e com balança
- src/App.jsx                      | 32 [32m+++++++++++++++++[m
- src/components/BuscaMaterial.jsx | 78 [32m+++++++++++++++++++++++++++++[m[31m-----------[m
- src/components/Historico.jsx     |  5 [32m++[m[31m-[m
- src/services/excelService.js     | 26 [32m++++++++++++++[m
- 4 files changed, 120 insertions(+), 21 deletions(-)
